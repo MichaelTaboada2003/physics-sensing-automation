@@ -10,7 +10,9 @@ import ComparePanel from './components/ComparePanel';
 import SpecimenLabel from './components/SpecimenLabel';
 import { useMapStats } from './hooks/useMapStats';
 import GuidedFlow from './components/GuidedFlow';
-import type { GuidedStage } from './components/GuidedFlow';
+import { initialGuidedRun } from './lib/guided';
+import type { GuidedRun, GuidedStage } from './lib/guided';
+import { PRESETS } from './lib/geo';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -106,8 +108,13 @@ function App() {
   const [bandsTick, setBandsTick] = useState(0);
   const [mode, setModeState] = useState<Mode>(loadMode);
   const [guidedStage, setGuidedStage] = useState<GuidedStage>('zone');
+  // Estado del modo guiado: vive aquí para no perderse al pasar a experto y volver
+  const [guidedRun, setGuidedRun] = useState<GuidedRun>(() => initialGuidedRun(PRESETS[0].bbox, PRESETS[0].name));
+  const [resumeKey, setResumeKey] = useState(0);
 
   const setMode = (m: Mode) => {
+    // Al volver al modo guiado se retoma la sesión actual (resultados o solo la serie)
+    if (m === 'guided' && mode !== 'guided') setResumeKey(k => k + 1);
     setModeState(m);
     saveMode(m);
   };
@@ -294,6 +301,10 @@ function App() {
               sessionId={state.sessionId}
               zone={state.zone}
               sceneInfo={state.sceneInfo}
+              mapReady={state.mapReady}
+              run={guidedRun}
+              setRun={setGuidedRun}
+              resumeKey={resumeKey}
             />
           )}
           {showSideLabel && state.zone && (

@@ -328,3 +328,15 @@ def test_series_excludes_years_without_classified_pixels():
     assert 2021 not in series["years_used_for_trend"]      # …pero no entra en la tendencia
     point = next(p for p in series["points"] if p["year"] == 2021)
     assert point["valid_percent"] == 0.0 and point["stats"]["vegetation"]["percent_clear"] is None
+
+
+def test_timeseries_summary_reuses_processed_years():
+    sid, session = _make_session()
+    only_current = client.get("/timeseries/summary", params={"session_id": sid}).json()
+    assert [p["year"] for p in only_current["points"]] == [2026]
+    with patch.object(compare, "best_scene", side_effect=lambda b, tr, c: _past_scene(int(tr[:4]))), \
+         patch.object(compare, "read_on_grid", side_effect=_fake_read):
+        client.post("/compare", json={"session_id": sid, "year": 2020})
+    with patch.object(compare, "best_scene", side_effect=AssertionError("no debe buscar escenas")):
+        summary = client.get("/timeseries/summary", params={"session_id": sid}).json()
+    assert [p["year"] for p in summary["points"]] == [2020, 2026] and summary["failed"] == []

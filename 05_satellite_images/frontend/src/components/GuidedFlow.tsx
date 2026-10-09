@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
   AlertCircle, ArrowRight, Check, Circle, Download, FileSpreadsheet, FileText,
@@ -15,12 +15,11 @@ import SwipeMap from './map/SwipeMap';
 import MapLegend from './MapLegend';
 import SpecimenLabel from './SpecimenLabel';
 import type { DeterminationSlip } from './SpecimenLabel';
+import type { GuidedRun, GuidedStage, TaskId } from '../lib/guided';
 
 // ── Tipos y constantes ─────────────────────────────────────────────────────────
 
-export type GuidedStage = 'zone' | 'running' | 'results';
 
-type TaskId = 'scene' | 'bands' | 'train' | 'map' | 'series';
 
 const TASKS: { id: TaskId; label: string; detail: string }[] = [
   { id: 'scene', label: 'Buscar la imagen más despejada', detail: 'Entre las imágenes del último año, la que tiene menos nubes sobre la zona.' },
@@ -43,6 +42,11 @@ interface GuidedFlowProps {
   sessionId: string | null;
   zone: Zone | null;
   sceneInfo: { id: string; datetime: string } | null;
+  mapReady: boolean;
+  run: GuidedRun;
+  setRun: React.Dispatch<React.SetStateAction<GuidedRun>>;
+  /** Cambia cada vez que se entra al modo guiado: dispara la reanudación. */
+  resumeKey: number;
 }
 
 const fmt = (v: number | null | undefined, d = 1) =>
@@ -51,21 +55,18 @@ const fmt = (v: number | null | undefined, d = 1) =>
 // ── Componente ─────────────────────────────────────────────────────────────────
 
 export default function GuidedFlow({
-  stage, onStage, onSession, onMapReady, onOpenExpert, sessionId, zone, sceneInfo,
+  stage, onStage, onSession, onMapReady, onOpenExpert, sessionId, zone, sceneInfo, mapReady, run: state, setRun, resumeKey,
 }: GuidedFlowProps) {
   const { consume } = useProgressStream();
+  const { bbox, zoneName, current, done, message, error } = state;
+  const series = state.seriesSession === sessionId ? state.series : null;
 
-  // Zona
-  const [bbox, setBbox] = useState<BBox>(PRESETS[0].bbox);
-  const [zoneName, setZoneName] = useState(PRESETS[0].name);
   const [focus, setFocus] = useState<{ bbox: BBox; n: number } | undefined>();
-
-  // Ejecución
-  const [current, setCurrent] = useState<TaskId | null>(null);
-  const [done, setDone] = useState<TaskId[]>([]);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState<{ task: TaskId; text: string } | null>(null);
-  const [series, setSeries] = useState<TimeSeries | null>(null);
+  const setBbox = (b: BBox) => setRun(r => ({ ...r, bbox: b }));
+  const setZoneName = (n: string) => setRun(r => ({ ...r, zoneName: n }));
+  const setCurrent = (t: TaskId | null) => setRun(r => ({ ...r, current: t }));
+  const setMessage = (m: string) => setRun(r => ({ ...r, message: m }));
+  const setError = (e: GuidedRun['error']) => setRun(r => ({ ...r, error: e }));
 
   const zoneError = bboxIsTooLarge(bbox)
     ? 'La zona es demasiado grande: dibuja una más pequeña (máximo 500 km²).'
@@ -76,20 +77,60 @@ export default function GuidedFlow({
     new Promise<StreamLine>((resolve, reject) => {
       consume(
         url, 'POST', JSON.stringify(body),
-        l => setMessage(l.message),
+        l => setRun(r => ({ ...r, message: l.message })),
         l => resolve(l),
         l => reject(new Error(l.error ?? l.message)),
       );
-    }), [consume]);
+    }), [consume, setRun]);
+
+  const finish = (t: TaskId) => setRun(r => ({ ...r, done: [...r.done, t] }));
+
+  /** Solo el último paso: la serie de 10 años sobre una sesión ya clasificada (p. ej. del modo experto). */
+  const runSeriesOnly = async (sid: string) => {
+    onStage('running');
+    setRun(r => ({ ...r, done: ['scene', 'bands', 'train', 'map'], current: 'series', error: null, message: '' }));
+    try {
+      const last = await stream(`${API_BASE}/timeseries`, { session_id: sid, years_back: 10 });
+      setRun(r => ({ ...r, series: last.series ?? null, seriesSession: sid, current: null, done: [...r.done, 'series'] }));
+      onStage('results');
+    } catch (e) {
+      setRun(r => ({ ...r, current: null, error: { task: 'series', text: e instanceof Error ? e.message : 'Error inesperado.' } }));
+    }
+  };
+
+  // Al entrar al modo guiado con una sesión ya clasificada, retomarla en vez de empezar de cero
+  useEffect(() => {
+    if (!resumeKey || !sessionId || !mapReady || state.current) return;
+    if (state.series && state.seriesSession === sessionId) {
+      onStage('results');
+      return;
+    }
+    let alive = true;
+    fetch(`${API_BASE}/timeseries/summary?session_id=${sessionId}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then((s: TimeSeries | null) => {
+        if (!alive) return;
+        // Con al menos 3 años además del actual ya hay una serie que mostrar
+        if (s && s.points.length >= 4) {
+          setRun(r => ({ ...r, series: s, seriesSession: sessionId, error: null }));
+          onStage('results');
+        } else {
+          runSeriesOnly(sessionId);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+    // Solo al entrar al modo guiado (resumeKey), no en cada cambio de estado
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeKey]);
 
   const run = async () => {
     onStage('running');
-    setDone([]);
-    setError(null);
-    setSeries(null);
+    setRun(r => ({ ...r, done: [], error: null, series: null, seriesSession: null }));
     const zoneNow: Zone = { name: zoneName, bbox };
     let task: TaskId = 'scene';
-    const finish = (t: TaskId) => setDone(d => [...d, t]);
     try {
       // 1. Escena más despejada del último año
       setCurrent(task);
@@ -126,7 +167,7 @@ export default function GuidedFlow({
       // 5. Serie de 10 años
       task = 'series'; setCurrent(task);
       const last = await stream(`${API_BASE}/timeseries`, { session_id: session.session_id, years_back: 10 });
-      if (last.series) setSeries(last.series);
+      setRun(r => ({ ...r, series: last.series ?? null, seriesSession: session.session_id }));
       finish(task);
       setCurrent(null);
       onStage('results');
@@ -235,7 +276,12 @@ export default function GuidedFlow({
         </ol>
         {error && (
           <div className="flex flex-wrap gap-3">
-            <button onClick={run} className="btn btn-primary"><RotateCcw className="w-4 h-4" /> Reintentar</button>
+            <button
+              onClick={() => (error.task === 'series' && sessionId && mapReady ? runSeriesOnly(sessionId) : run())}
+              className="btn btn-primary"
+            >
+              <RotateCcw className="w-4 h-4" /> Reintentar
+            </button>
             <button onClick={() => onStage('zone')} className="btn btn-secondary">Elegir otra zona</button>
           </div>
         )}

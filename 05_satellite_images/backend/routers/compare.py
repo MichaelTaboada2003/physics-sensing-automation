@@ -37,6 +37,7 @@ from pydantic import BaseModel
 from core.compare import (
     LAYER_KINDS,
     MAX_YEARS_BACK,
+    build_series,
     build_summary,
     compare_stream,
     render_comparison,
@@ -148,6 +149,22 @@ def timeseries(request: TimeseriesRequest) -> StreamingResponse:
         timeseries_stream(request.session_id, request.years_back),
         media_type="application/x-ndjson",
     )
+
+
+@router.get("/timeseries/summary")
+def timeseries_summary(
+    session_id: str = Query(..., description="Identificador de la sesión activa."),
+) -> dict:
+    """Serie con los años ya procesados (sin descargar ni clasificar nada nuevo).
+
+    Permite que el modo guiado retome un análisis hecho en el modo experto.
+    ``points`` incluye siempre el año actual; con un solo punto aún no hay serie.
+    """
+    session = _get_session_or_404(session_id)
+    _require_class_map(session)
+    series = build_series(session)
+    series["failed"] = []
+    return series
 
 
 @router.get("/layer")
