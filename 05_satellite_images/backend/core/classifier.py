@@ -14,11 +14,31 @@ import numpy as np
 from fastapi import HTTPException
 from sklearn.ensemble import RandomForestClassifier
 
-from core.indices import SENTINEL_VALUE, compute_indices
+from sklearn.metrics import (
+    accuracy_score,
+    cohen_kappa_score,
+    confusion_matrix,
+    precision_recall_fscore_support,
+)
+from sklearn.model_selection import train_test_split
+
+from core.indices import INDEX_NAMES, SENTINEL_VALUE, compute_indices
+from core.sentinel import BAND_SET
 from session_store import get_session
 
 if TYPE_CHECKING:
     from session_store import SessionData
+
+
+# Features del clasificador: índices espectrales + reflectancias
+FEATURE_NAMES: list[str] = [n.upper() for n in INDEX_NAMES] + list(BAND_SET)
+CLASS_LABELS = ["Vegetación", "Agua", "Minería"]
+
+# Submuestreo proporcional (estratificado) para acotar el tiempo de entrenamiento:
+# conserva la proporción real de cada clase, con un mínimo para clases raras.
+MAX_TRAIN_SAMPLES = 60_000
+MIN_SAMPLES_PER_CLASS = 1_000
+TEST_FRACTION = 0.25
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +99,31 @@ def _apply_rules(
     return veg_mask, water_mask, mining_mask
 
 
+def pseudo_labels(
+    ndvi: np.ndarray,
+    bsi: np.ndarray,
+    ndwi: np.ndarray,
+    rules: ThresholdRules,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Etiqueta cada píxel con la única regla que cumple.
+
+    Los píxeles que cumplen más de una regla (p. ej. ríos con mucho sedimento,
+    que satisfacen a la vez "agua" y "minería") son ambiguos y se descartan
+    (-1) en vez de quedarse con la última regla aplicada.
+
+    Returns:
+        labels    — int32, 0=Vegetación, 1=Agua, 2=Minería, -1=sin etiqueta.
+        ambiguous — bool, píxeles que cumplen dos o más reglas.
+    """
+    veg, water, mining = _apply_rules(ndvi, bsi, ndwi, rules)
+    n_rules = veg.astype(np.int8) + water + mining
+    labels = np.full(ndvi.shape, -1, dtype=np.int32)
+    labels[veg & (n_rules == 1)] = 0
+    labels[water & (n_rules == 1)] = 1
+    labels[mining & (n_rules == 1)] = 2
+    return labels, n_rules > 1
+
+
 # ---------------------------------------------------------------------------
 # preview_thresholds
 # ---------------------------------------------------------------------------
@@ -95,6 +140,9 @@ def preview_thresholds(session: "SessionData", rules: ThresholdRules) -> dict:
         - ``vegetation``: píxeles que cumplen la regla de vegetación.
         - ``water``: píxeles que cumplen la regla de agua.
         - ``mining``: píxeles que cumplen la regla de minería/suelo expuesto.
+        - ``ambiguous``: píxeles que cumplen 2+ reglas (descartados).
+
+        Las tres clases cuentan solo píxeles que cumplen exactamente una regla.
 
     Raises:
         HTTPException(422): si ninguna clase tiene al menos un píxel etiquetado.
@@ -113,13 +161,12 @@ def preview_thresholds(session: "SessionData", rules: ThresholdRules) -> dict:
     valid = _valid_mask(ndvi, bsi, ndwi)
     total_valid = int(np.count_nonzero(valid))
 
-    # Aplicar reglas sólo sobre píxeles válidos
-    veg_mask, water_mask, mining_mask = _apply_rules(ndvi, bsi, ndwi, rules)
-
-    # Restringir a píxeles válidos
-    vegetation = int(np.count_nonzero(veg_mask & valid))
-    water = int(np.count_nonzero(water_mask & valid))
-    mining = int(np.count_nonzero(mining_mask & valid))
+    # Etiquetas no ambiguas, restringidas a píxeles válidos
+    labels, ambiguous = pseudo_labels(ndvi, bsi, ndwi, rules)
+    vegetation = int(np.count_nonzero((labels == 0) & valid))
+    water = int(np.count_nonzero((labels == 1) & valid))
+    mining = int(np.count_nonzero((labels == 2) & valid))
+    n_ambiguous = int(np.count_nonzero(ambiguous & valid))
 
     # Requisito 5.7: al menos una clase debe tener píxeles
     if vegetation == 0 and water == 0 and mining == 0:
@@ -136,6 +183,7 @@ def preview_thresholds(session: "SessionData", rules: ThresholdRules) -> dict:
         "vegetation": vegetation,
         "water": water,
         "mining": mining,
+        "ambiguous": n_ambiguous,
     }
 
 
@@ -148,45 +196,86 @@ def _ndjson(obj: dict) -> str:
     return json.dumps(obj, ensure_ascii=False) + "\n"
 
 
+def build_features(bands: dict, indices: dict) -> tuple[np.ndarray, np.ndarray]:
+    """Construye la matriz de características y la máscara de píxeles válidos.
+
+    Columnas: ``FEATURE_NAMES`` (todos los índices + todas las bandas).
+
+    Returns:
+        X_flat  — array (N_valid, n_features) float32 con los píxeles válidos.
+        valid   — array booleano (H, W) indicando qué píxeles son válidos.
+    """
+    layers = [indices[n] for n in INDEX_NAMES] + [bands[b] for b in BAND_SET]
+    valid = np.ones(layers[0].shape, dtype=bool)
+    for arr in layers:
+        valid &= np.isfinite(arr) & (arr != SENTINEL_VALUE)
+    X_flat = np.stack([arr[valid] for arr in layers], axis=1).astype(np.float32)
+    return X_flat, valid
+
+
 def _build_feature_matrix(
     session: "SessionData",
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Construye la matriz de características y la máscara de píxeles válidos.
-
-    Columnas: NDVI, BSI, NDWI, B04, B08, B11 (en ese orden).
-
-    Returns:
-        X_flat  — array (N_valid, 6) float32 con los píxeles válidos.
-        valid   — array booleano (H, W) indicando qué píxeles son válidos.
-    """
-    # Calcular índices si aún no están disponibles
+    """``build_features`` sobre las bandas/índices de la sesión (calcula índices si faltan)."""
     if not session.indices:
         compute_indices(session)
+    return build_features(session.bands, session.indices)
 
-    ndvi: np.ndarray = session.indices["ndvi"]
-    bsi: np.ndarray = session.indices["bsi"]
-    ndwi: np.ndarray = session.indices["ndwi"]
-    b04: np.ndarray = session.bands["B04"]
-    b08: np.ndarray = session.bands["B08"]
-    b11: np.ndarray = session.bands["B11"]
 
-    # Máscara de píxeles válidos: finitos en índices Y en bandas usadas
-    def _finite(arr: np.ndarray) -> np.ndarray:
-        return np.isfinite(arr) & (arr != SENTINEL_VALUE)
+def _proportional_subsample(
+    y: np.ndarray, max_total: int, min_per_class: int, rng: np.random.Generator
+) -> np.ndarray:
+    """Submuestra estratificada que conserva la proporción de cada clase.
 
-    valid = (
-        _finite(ndvi) & _finite(bsi) & _finite(ndwi)
-        & np.isfinite(b04) & np.isfinite(b08) & np.isfinite(b11)
+    Si hay más de *max_total* muestras se toma la misma fracción de cada clase,
+    garantizando al menos *min_per_class* (o todas, si hay menos) para que las
+    clases raras no desaparezcan.  Así el modelo aprende con las proporciones
+    reales del paisaje en vez de priors artificialmente igualados.
+    """
+    if y.size <= max_total:
+        return np.arange(y.size)
+    frac = max_total / y.size
+    keep = []
+    for cls in np.unique(y):
+        idx = np.flatnonzero(y == cls)
+        n = min(idx.size, max(min_per_class, int(round(idx.size * frac))))
+        keep.append(rng.choice(idx, n, replace=False))
+    return np.sort(np.concatenate(keep))
+
+
+def _evaluate(
+    clf: RandomForestClassifier, X_test: np.ndarray, y_test: np.ndarray, n_train: int
+) -> dict:
+    """Métricas de hold-out frente a las pseudo-etiquetas + importancia de features."""
+    importances = sorted(
+        ({"feature": f, "importance": round(float(v), 4)}
+         for f, v in zip(FEATURE_NAMES, clf.feature_importances_)),
+        key=lambda d: d["importance"], reverse=True,
     )
-
-    # Apilar columnas y aplanar a (N_valid, 6)
-    X_flat = np.stack(
-        [ndvi[valid], bsi[valid], ndwi[valid],
-         b04[valid], b08[valid], b11[valid]],
-        axis=1,
-    ).astype(np.float32)
-
-    return X_flat, valid
+    metrics: dict = {
+        "oob_score": round(float(clf.oob_score_), 4),
+        "n_train": int(n_train),
+        "n_test": int(len(y_test)),
+        "classes": CLASS_LABELS,
+        "feature_importances": importances,
+    }
+    if len(y_test):
+        y_pred = clf.predict(X_test)
+        precision, recall, f1, support = precision_recall_fscore_support(
+            y_test, y_pred, labels=[0, 1, 2], zero_division=0
+        )
+        metrics.update({
+            "accuracy": round(float(accuracy_score(y_test, y_pred)), 4),
+            "kappa": round(float(cohen_kappa_score(y_test, y_pred)), 4),
+            "confusion_matrix": confusion_matrix(y_test, y_pred, labels=[0, 1, 2]).tolist(),
+            "per_class": [
+                {"class": CLASS_LABELS[i], "precision": round(float(precision[i]), 4),
+                 "recall": round(float(recall[i]), 4), "f1": round(float(f1[i]), 4),
+                 "support": int(support[i])}
+                for i in range(3)
+            ],
+        })
+    return metrics
 
 
 # ---------------------------------------------------------------------------
@@ -244,15 +333,9 @@ def train_stream(
     bsi_valid = session.indices["bsi"][valid]
     ndwi_valid = session.indices["ndwi"][valid]
 
-    veg_mask, water_mask, mining_mask = _apply_rules(
-        ndvi_valid, bsi_valid, ndwi_valid, rules
-    )
-
-    # Etiquetas: 0=Veg, 1=Agua, 2=Minería; -1=sin etiqueta (se descarta)
-    labels = np.full(X_flat.shape[0], -1, dtype=np.int32)
-    labels[veg_mask] = 0
-    labels[water_mask] = 1
-    labels[mining_mask] = 2
+    # Etiquetas: 0=Veg, 1=Agua, 2=Minería; -1=sin etiqueta o ambigua (se descarta)
+    labels, ambiguous = pseudo_labels(ndvi_valid, bsi_valid, ndwi_valid, rules)
+    n_ambiguous = int(np.count_nonzero(ambiguous))
 
     # Descartar píxeles sin etiqueta
     labeled_mask = labels >= 0
@@ -273,12 +356,13 @@ def train_stream(
         "message": (
             f"Píxeles etiquetados — Vegetación: {n_veg}, "
             f"Agua: {n_water}, Minería: {n_mining}. "
-            f"Total: {total_labeled}."
+            f"Total: {total_labeled}. Descartados por ambiguos: {n_ambiguous}."
         ),
         "vegetation": n_veg,
         "water": n_water,
         "mining": n_mining,
         "total_labeled": total_labeled,
+        "ambiguous": n_ambiguous,
     })
 
     # ------------------------------------------------------------------
@@ -308,14 +392,27 @@ def train_stream(
         return
 
     # ------------------------------------------------------------------
-    # 6. Línea de progreso antes del entrenamiento (Req 6.3, 10.3)
+    # 6. Submuestreo proporcional + partición hold-out estratificada
     # ------------------------------------------------------------------
+    rng = np.random.default_rng(42)
+    keep = _proportional_subsample(y_train, MAX_TRAIN_SAMPLES, MIN_SAMPLES_PER_CLASS, rng)
+    X_bal, y_bal = X_train[keep], y_train[keep]
+
+    can_split = min(n_veg, n_water, n_mining) >= 4
+    if can_split:
+        X_fit, X_test, y_fit, y_test = train_test_split(
+            X_bal, y_bal, test_size=TEST_FRACTION, stratify=y_bal, random_state=42
+        )
+    else:
+        X_fit, y_fit = X_bal, y_bal
+        X_test, y_test = X_bal[:0], y_bal[:0]
+
     yield _ndjson({
         "stage": "training",
         "progress": 0.3,
         "message": (
-            f"Entrenando RandomForest con {total_labeled} muestras "
-            f"({X_train.shape[1]} características)…"
+            f"Entrenando RandomForest con {len(y_fit)} muestras (proporción real por clase) "
+            f"({X_fit.shape[1]} características); {len(y_test)} reservadas para validación…"
         ),
     })
 
@@ -324,11 +421,12 @@ def train_stream(
     # ------------------------------------------------------------------
     try:
         clf = RandomForestClassifier(
-            n_estimators=100,
+            n_estimators=150,
             random_state=42,
             oob_score=True,
+            n_jobs=-1,
         )
-        clf.fit(X_train, y_train)
+        clf.fit(X_fit, y_fit)
     except Exception as exc:
         # No almacenar clasificador parcial (Req 6.5)
         yield _ndjson({
@@ -342,13 +440,14 @@ def train_stream(
     oob_score: float = float(clf.oob_score_)
 
     # ------------------------------------------------------------------
-    # 8. Línea de progreso post-entrenamiento
+    # 8. Evaluación hold-out
     # ------------------------------------------------------------------
     yield _ndjson({
         "stage": "training",
         "progress": 0.9,
-        "message": f"Entrenamiento completado. OOB accuracy: {oob_score:.4f}.",
+        "message": f"Entrenamiento completado. OOB accuracy: {oob_score:.4f}. Evaluando…",
     })
+    metrics = _evaluate(clf, X_test, y_test, len(y_fit))
 
     # ------------------------------------------------------------------
     # 9. Almacenar clasificador en la sesión (Req 6.2)
@@ -356,6 +455,7 @@ def train_stream(
     classifier_id = str(uuid.uuid4())
     session.classifier = clf
     session.classifier_id = classifier_id
+    session.classifier_metrics = metrics
 
     # ------------------------------------------------------------------
     # 10. Línea final (Req 6.3, 10.4)
@@ -369,6 +469,7 @@ def train_stream(
         ),
         "classifier_id": classifier_id,
         "oob_score": oob_score,
+        "metrics": metrics,
     }
 
     # Advertencia si hay menos de 100 píxeles etiquetados (Req 6.4)
