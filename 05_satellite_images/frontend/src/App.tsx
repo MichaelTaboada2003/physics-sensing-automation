@@ -1,15 +1,16 @@
 import { useState } from 'react';
-import { Search, Layers, BarChart2, Cpu, Map, ChevronRight, Satellite } from 'lucide-react';
+import { Search, Layers, BarChart2, Cpu, Map, History, ChevronRight, Satellite } from 'lucide-react';
 import type { SearchResponse, StreamLine } from './types';
 import SearchPanel from './components/SearchPanel';
 import BandsPanel from './components/BandsPanel';
 import IndicesPanel from './components/IndicesPanel';
 import ClassifierPanel from './components/ClassifierPanel';
 import MapPanel from './components/MapPanel';
+import ComparePanel from './components/ComparePanel';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type AppStep = 1 | 2 | 3 | 4 | 5;
+type AppStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 interface AppState {
   step: AppStep;
@@ -18,6 +19,7 @@ interface AppState {
   streamLogs: StreamLine[];
   errorMsg: string;
   loading: boolean;
+  mapReady: boolean;
 }
 
 // ── Step definitions ───────────────────────────────────────────────────────────
@@ -28,6 +30,7 @@ const STEPS = [
   { id: 3 as AppStep, label: 'Índices',    icon: BarChart2 },
   { id: 4 as AppStep, label: 'Clasificar', icon: Cpu      },
   { id: 5 as AppStep, label: 'Mapa',       icon: Map      },
+  { id: 6 as AppStep, label: 'Comparar',   icon: History  },
 ];
 
 // ── App ────────────────────────────────────────────────────────────────────────
@@ -40,6 +43,7 @@ function App() {
     streamLogs: [],
     errorMsg: '',
     loading: false,
+    mapReady: false,
   });
 
   const setStep = (step: AppStep) => setState(prev => ({ ...prev, step }));
@@ -52,12 +56,15 @@ function App() {
       streamLogs: [],
       errorMsg: '',
       loading: false,
+      mapReady: false,
     });
   };
 
   // A step is accessible if it has been reached (sessionId unlocks steps 2+)
   const isStepAccessible = (stepId: AppStep): boolean => {
     if (stepId === 1) return true;
+    // La comparativa necesita el mapa clasificado actual
+    if (stepId === 6) return state.mapReady;
     return state.sessionId !== null;
   };
 
@@ -87,7 +94,7 @@ function App() {
               Imágenes Satelitales
             </h1>
             <p className="text-zinc-500 font-medium">
-              Clasificación de cobertura terrestre con Sentinel-2 y Random Forest
+              Cobertura terrestre de Colombia con Sentinel-2 y Random Forest
             </p>
           </div>
         </div>
@@ -130,8 +137,8 @@ function App() {
               </div>
               <h2 className="text-3xl font-bold mb-3">Configurar Consulta STAC</h2>
               <p className="text-zinc-400 max-w-sm text-center leading-relaxed text-sm">
-                Define la zona de interés, el rango temporal y el umbral de nubes para buscar
-                la mejor escena Sentinel-2 disponible.
+                Elige una zona de Colombia en el mapa y el rango temporal; luego escoge entre
+                las escenas Sentinel-2 con menos nubes sobre tu zona.
               </p>
             </div>
             <SearchPanel onSearchComplete={handleSearchComplete} />
@@ -147,8 +154,8 @@ function App() {
               </div>
               <h2 className="text-3xl font-bold mb-3">Descarga de Bandas</h2>
               <p className="text-zinc-400 max-w-sm text-center leading-relaxed text-sm">
-                Descarga las bandas B02, B03, B04, B08 y B11 de la escena seleccionada y
-                genera la vista en color real.
+                Descarga 9 bandas espectrales y la máscara de nubes (SCL), convertidas a
+                reflectancia de superficie y alineadas en una grilla de 10 m.
               </p>
             </div>
             <BandsPanel
@@ -168,8 +175,8 @@ function App() {
               </div>
               <h2 className="text-3xl font-bold mb-3">Índices Espectrales</h2>
               <p className="text-zinc-400 max-w-sm text-center leading-relaxed text-sm">
-                Visualiza los índices NDVI, BSI y NDWI para interpretar la vegetación,
-                el suelo expuesto y el agua.
+                Explora 7 índices (NDVI, BSI, NDWI, MNDWI, NDBI, EVI, SAVI) para interpretar
+                la vegetación, el suelo expuesto y el agua. Las nubes quedan en gris.
               </p>
             </div>
             <IndicesPanel
@@ -195,7 +202,7 @@ function App() {
             </div>
             <ClassifierPanel
               sessionId={state.sessionId}
-              onComplete={() => setStep(5)}
+              onComplete={() => setState(prev => ({ ...prev, step: 5, mapReady: true }))}
             />
           </div>
         )}
@@ -216,6 +223,27 @@ function App() {
             <MapPanel
               sessionId={state.sessionId}
               onReset={handleReset}
+              onCompare={() => setStep(6)}
+            />
+          </div>
+        )}
+
+        {/* Step 6 — Comparativa temporal */}
+        {state.step === 6 && state.sessionId && state.sceneInfo && (
+          <div className="glass-panel p-8 md:p-12 animate-fade-in">
+            <div className="flex flex-col items-center mb-10">
+              <div className="w-20 h-20 bg-orange-500/10 rounded-3xl flex items-center justify-center mb-6 border border-orange-500/20">
+                <History className="w-9 h-9 text-orange-500" />
+              </div>
+              <h2 className="text-3xl font-bold mb-3">Comparativa Temporal</h2>
+              <p className="text-zinc-400 max-w-sm text-center leading-relaxed text-sm">
+                Compara con cualquier año de la última década o calcula la serie completa
+                con tendencias, sobre el mapa y con exportación.
+              </p>
+            </div>
+            <ComparePanel
+              sessionId={state.sessionId}
+              sceneYear={new Date(state.sceneInfo.datetime).getUTCFullYear()}
             />
           </div>
         )}

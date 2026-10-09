@@ -1,4 +1,8 @@
 import { useState } from 'react';
+import type { LayerKind } from '../types';
+import { useLayerBounds } from '../hooks/useLayerBounds';
+import SwipeMap from './map/SwipeMap';
+import LayerControls from './map/LayerControls';
 import {
   Map,
   Download,
@@ -9,6 +13,10 @@ import {
   Droplets,
   Mountain,
   HelpCircle,
+  History,
+  Globe,
+  FileText,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -20,6 +28,7 @@ const API_BASE = '';
 interface MapPanelProps {
   sessionId: string;
   onReset: () => void;
+  onCompare: () => void;
 }
 
 type ImageStatus = 'loading' | 'loaded' | 'error';
@@ -30,13 +39,16 @@ const LEGEND_ITEMS = [
   { label: 'Vegetación',            color: 'bg-green-600',      icon: Leaf,       textColor: 'text-green-400'  },
   { label: 'Agua',                  color: 'bg-blue-600',       icon: Droplets,   textColor: 'text-blue-400'   },
   { label: 'Minería / Suelo exp.',  color: 'bg-amber-800',      icon: Mountain,   textColor: 'text-amber-500'  },
-  { label: 'No clasificado',        color: 'bg-zinc-900',       icon: HelpCircle, textColor: 'text-zinc-500'   },
+  { label: 'Sin datos / nube',       color: 'bg-zinc-900',       icon: HelpCircle, textColor: 'text-zinc-500'   },
 ];
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function MapPanel({ sessionId, onReset }: MapPanelProps) {
+export default function MapPanel({ sessionId, onReset, onCompare }: MapPanelProps) {
   const [imageStatus, setImageStatus] = useState<ImageStatus>('loading');
+  const [layerKind, setLayerKind] = useState<LayerKind>('class');
+  const [opacity, setOpacity] = useState(0.75);
+  const { bounds } = useLayerBounds(sessionId);
 
   const mapUrl      = `${API_BASE}/map/classified?session_id=${sessionId}`;
   const pngUrl      = `${API_BASE}/download/classified.png?session_id=${sessionId}`;
@@ -59,6 +71,33 @@ export default function MapPanel({ sessionId, onReset }: MapPanelProps) {
 
   return (
     <div className="w-full max-w-3xl mx-auto animate-fade-in space-y-6">
+
+      {/* ── Interactive map ── */}
+      {bounds && (
+        <div className="bg-zinc-900/40 rounded-2xl border border-white/5 p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-teal-500/10 rounded-lg border border-teal-500/20">
+              <Globe className="w-4 h-4 text-teal-400" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-zinc-200">Sobre el mapa</h3>
+              <p className="text-xs text-zinc-500">Capa georreferenciada superpuesta a la imagen satelital de alta resolución</p>
+            </div>
+          </div>
+          <LayerControls
+            kinds={['class', 'ndvi', 'rgb']}
+            kind={layerKind}
+            onKind={setLayerKind}
+            opacity={opacity}
+            onOpacity={setOpacity}
+          />
+          <SwipeMap
+            bounds={bounds}
+            after={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=${layerKind}`, label: 'Actual' }}
+            opacity={opacity}
+          />
+        </div>
+      )}
 
       {/* ── Map image ── */}
       <div className="bg-zinc-900/40 rounded-2xl border border-white/5 p-6 space-y-4">
@@ -143,11 +182,31 @@ export default function MapPanel({ sessionId, onReset }: MapPanelProps) {
           </div>
           <div>
             <h3 className="text-sm font-bold text-zinc-200">Exportar mapa</h3>
-            <p className="text-xs text-zinc-500">Descarga el mapa en formato PNG o GeoTIFF georreferenciado</p>
+            <p className="text-xs text-zinc-500">Reporte imprimible, tabla de superficies, PNG o GeoTIFF georreferenciado</p>
           </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Full report */}
+          <a
+            href={`${API_BASE}/export/report.html?session_id=${sessionId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 py-3 px-4 bg-zinc-100 hover:bg-white text-zinc-900 font-bold text-sm rounded-xl transition-all active:scale-[0.98]"
+          >
+            <FileText className="w-4 h-4" />
+            Reporte completo (HTML / PDF)
+          </a>
+
+          {/* Stats CSV */}
+          <button
+            onClick={() => handleDownload(`${API_BASE}/export/stats.csv?session_id=${sessionId}`, 'superficie_por_clase.csv')}
+            className="flex items-center justify-center gap-2 py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-sm rounded-xl border border-white/10 transition-all active:scale-[0.98]"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            Superficies (CSV)
+          </button>
+
           {/* Download PNG */}
           <button
             onClick={() => handleDownload(pngUrl, 'mapa_clasificacion.png')}
@@ -164,6 +223,25 @@ export default function MapPanel({ sessionId, onReset }: MapPanelProps) {
           >
             <Download className="w-4 h-4" />
             Descargar GeoTIFF
+          </button>
+        </div>
+      </div>
+
+      {/* ── Temporal comparison ── */}
+      <div className="bg-zinc-900/40 rounded-2xl border border-white/5 p-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-bold text-zinc-200">Comparativa temporal</h3>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              Compara este mapa con la misma zona hasta 10 años atrás.
+            </p>
+          </div>
+          <button
+            onClick={onCompare}
+            className="flex items-center gap-2 px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-orange-600/20 transition-all active:scale-[0.98] flex-shrink-0"
+          >
+            <History className="w-4 h-4" />
+            Comparar años
           </button>
         </div>
       </div>
