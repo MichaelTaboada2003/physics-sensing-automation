@@ -68,6 +68,17 @@ cd frontend
 npm install && npm run dev
 ```
 
+## 🧭 Dos modos
+
+- **Guiado** (para periodistas y no especialistas): eliges una zona de Colombia y un solo botón ejecuta todo el análisis (escena más despejada del último año → bandas → modelo con las reglas por defecto → mapa → serie de 10 años). El resultado es una frase con la tendencia de la vegetación, su intervalo de confianza y su significancia; un mapa antes/después; el gráfico de hectáreas por año; las descargas listas para publicar (imagen antes/después y gráfico de tendencia con el crédito de Copernicus, CSV, reporte) y un recuadro con lo que la herramienta mide y lo que no.
+- **Experto**: los 6 pasos con todos los parámetros. La sesión es la misma: «Ver el análisis completo» abre en modo experto lo calculado en modo guiado.
+
+El selector está arriba del riel lateral y se recuerda en el navegador.
+
+## 🎨 Diseño
+
+Mundo visual «pliego de herbario» (tradición del Herbario Nacional Colombiano): cartón de montaje gris verdoso, papel de etiqueta, tinta ferrogálica, riel verde carpeta, violeta de sello de accesión para las acciones y un rojo reservado solo para el cambio estadísticamente significativo. Cada zona analizada lleva su **etiqueta de ejemplar** (localidad, coordenadas, fecha, satélite, nubes, cobertura por clase) y cada año comparado le agrega una **ficha de determinación** fechada. Tipografías autoalojadas: Atkinson Hyperlegible Next (interfaz), Source Serif 4 (títulos y localidades) y Courier Prime (cifras). Paletas de clases y de cambios validadas para daltonismo. Contexto de producto en `PRODUCT.md`.
+
 ## 🗺️ Flujo de la Aplicación (6 pasos)
 
 ### Paso 1 — Zona y escena
@@ -105,6 +116,11 @@ Capa de clasificación, NDVI o color real superpuesta al mapa satelital con opac
 - **Un año** (`POST /compare`): escena de la misma temporada (±60 días; si no hay, todo el año) con menos nubes en la zona, alineada píxel a píxel y clasificada con el **mismo** modelo. Slider **antes/después** sobre el mapa (color real, clasificación, NDVI o mapa de cambios), figura comparativa, superficies y transiciones (p. ej. vegetación → minería) y **GeoJSON** de polígonos de cambio (`GET /export/changes.geojson`, manchas < 0.5 ha filtradas).
 - **Serie de 10 años** (`POST /timeseries`): procesa los años en paralelo y estima la tendencia de cada clase sobre el % del área sin nubes (solo años con ≥ 50 % de la zona despejada) con la **pendiente de Theil-Sen** (mediana de pendientes entre pares de años, robusta frente a años atípicos, con IC 95 %) y la **prueba de Mann-Kendall** (p-valor; significativa si p < 0.05). Sentinel-2 L2A tiene cobertura irregular antes de 2017.
 
+### Salidas para publicar
+- `GET /export/beforeafter.png?year=…&kind=rgb|class&title=…` — antes/después con fechas, barra de escala y crédito «Contiene datos modificados de Copernicus Sentinel-2».
+- `GET /export/trend.png?title=…` — hectáreas de vegetación por año con la recta de Theil-Sen, el veredicto de Mann-Kendall y el IC 95 %; eje desde cero para no exagerar cambios pequeños.
+- Los años con menos del 50 % de píxeles clasificados no entran en la tendencia y aparecen como huecos (nunca como 0).
+
 ## 🔑 Conceptos Clave
 
 ### ¿Por qué funciona con una sola imagen?
@@ -124,7 +140,7 @@ Para que un cambio en el mapa sea un cambio real en el terreno: misma temporada 
 | Capa | Tecnología |
 |------|-----------|
 | Backend | Python 3, FastAPI, rasterio, pystac-client, planetary-computer, scikit-learn, numpy, matplotlib |
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS, Leaflet (react-leaflet), Recharts, lucide-react |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS 4, Leaflet (react-leaflet), Recharts, lucide-react, Fontsource |
 | Datos | Sentinel-2 L2A via Microsoft Planetary Computer STAC |
 | ML | RandomForestClassifier (scikit-learn) |
 | Exportación | GeoTIFF (rasterio), PNG (matplotlib), GeoJSON (rasterio.features), HTML, CSV |

@@ -1,0 +1,601 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-09T20:08:32.235053+00:00",
+  "title": "Design System: Imágenes Satelitales · Cobertura terrestre Colombia",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Mounting Board",
+        "canonical": "#eef1ea",
+        "tonalRamp": [
+          "#272e1f",
+          "#445035",
+          "#61714b",
+          "#7e9362",
+          "#99ab82",
+          "#b5c2a3",
+          "#d2dac8",
+          "#f3f5f0"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Label Paper",
+        "canonical": "#fbfcf8",
+        "tonalRamp": [
+          "#2e3617",
+          "#505d28",
+          "#718439",
+          "#93ab49",
+          "#abc06d",
+          "#c2d194",
+          "#dae3bf",
+          "#f5f7ed"
+        ]
+      },
+      "paper-2": {
+        "role": "neutral",
+        "displayName": "Resting Paper",
+        "canonical": "#f4f6f0",
+        "tonalRamp": [
+          "#29301d",
+          "#485332",
+          "#667647",
+          "#85995c",
+          "#9fb17c",
+          "#b9c69f",
+          "#d5ddc6",
+          "#f3f5ef"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Iron-Gall Ink",
+        "canonical": "#1b2430",
+        "tonalRamp": [
+          "#1c2531",
+          "#304055",
+          "#445b79",
+          "#58769d",
+          "#7992b4",
+          "#9dafc8",
+          "#c4cfde",
+          "#eff2f6"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Faded Ink",
+        "canonical": "#3d4856",
+        "tonalRamp": [
+          "#20252d",
+          "#37414e",
+          "#4e5c6e",
+          "#66788f",
+          "#8594a8",
+          "#a5b1c0",
+          "#c9d0d9",
+          "#f0f2f4"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Pencil Note",
+        "canonical": "#5f6b77",
+        "tonalRamp": [
+          "#22262b",
+          "#3b424a",
+          "#545e69",
+          "#6d7a88",
+          "#8b96a2",
+          "#aab2bb",
+          "#ccd1d6",
+          "#f1f2f4"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#cdd3c8",
+        "tonalRamp": [
+          "#262a22",
+          "#424a3b",
+          "#5d6954",
+          "#79886d",
+          "#95a28b",
+          "#b2bbaa",
+          "#d1d6cc",
+          "#f2f4f1"
+        ]
+      },
+      "rule-strong": {
+        "role": "neutral",
+        "displayName": "Strong Hairline",
+        "canonical": "#aab3a6",
+        "tonalRamp": [
+          "#252923",
+          "#40483d",
+          "#5b6657",
+          "#778471",
+          "#939f8e",
+          "#b0b9ac",
+          "#d0d5cd",
+          "#f2f3f1"
+        ]
+      },
+      "folder": {
+        "role": "secondary",
+        "displayName": "Genus-Folder Green",
+        "canonical": "#1e3a2b",
+        "tonalRamp": [
+          "#1a3225",
+          "#2d5741",
+          "#407c5c",
+          "#53a178",
+          "#75b894",
+          "#9acbb1",
+          "#c2e0d0",
+          "#eef6f2"
+        ]
+      },
+      "folder-2": {
+        "role": "secondary",
+        "displayName": "Folder Fold",
+        "canonical": "#2a4c39",
+        "tonalRamp": [
+          "#1b3125",
+          "#2f5540",
+          "#437a5b",
+          "#579e76",
+          "#78b593",
+          "#9cc9b0",
+          "#c4ded0",
+          "#eff6f2"
+        ]
+      },
+      "folder-ink": {
+        "role": "secondary",
+        "displayName": "Folder Ink",
+        "canonical": "#e3ebe2",
+        "tonalRamp": [
+          "#212d1f",
+          "#394e36",
+          "#51704d",
+          "#699164",
+          "#88aa83",
+          "#a8c1a4",
+          "#cbdac9",
+          "#f0f5f0"
+        ]
+      },
+      "folder-muted": {
+        "role": "secondary",
+        "displayName": "Folder Grey-Green",
+        "canonical": "#a9bdaf",
+        "tonalRamp": [
+          "#212b24",
+          "#3a4b3f",
+          "#526b59",
+          "#6a8b74",
+          "#89a491",
+          "#a8bdae",
+          "#cbd7cf",
+          "#f1f4f2"
+        ]
+      },
+      "stamp": {
+        "role": "primary",
+        "displayName": "Accession-Stamp Violet",
+        "canonical": "#5a4a9c",
+        "tonalRamp": [
+          "#1e1934",
+          "#342b5a",
+          "#4a3d80",
+          "#604fa6",
+          "#8071bc",
+          "#a297ce",
+          "#c7c1e1",
+          "#efeef7"
+        ]
+      },
+      "stamp-2": {
+        "role": "primary",
+        "displayName": "Pressed Stamp",
+        "canonical": "#4a3c86",
+        "tonalRamp": [
+          "#1d1835",
+          "#33295c",
+          "#483a82",
+          "#5d4ca9",
+          "#7e6fbe",
+          "#a095d0",
+          "#c6c0e3",
+          "#efedf7"
+        ]
+      },
+      "stamp-tint": {
+        "role": "primary",
+        "displayName": "Stamp Tint",
+        "canonical": "#ecebf6",
+        "tonalRamp": [
+          "#1a1835",
+          "#2e295b",
+          "#413b82",
+          "#544ca9",
+          "#766fbe",
+          "#9b95d0",
+          "#c3c0e3",
+          "#eeedf7"
+        ]
+      },
+      "signal": {
+        "role": "tertiary",
+        "displayName": "Type-Specimen Red",
+        "canonical": "#b42318",
+        "tonalRamp": [
+          "#440d09",
+          "#751710",
+          "#a62016",
+          "#d82a1d",
+          "#e65246",
+          "#ed8078",
+          "#f4b3ae",
+          "#fceae8"
+        ]
+      },
+      "signal-tint": {
+        "role": "tertiary",
+        "displayName": "Red Wash",
+        "canonical": "#fbeae8",
+        "tonalRamp": [
+          "#41110b",
+          "#711d14",
+          "#a12a1c",
+          "#d13624",
+          "#e05c4d",
+          "#e8887d",
+          "#f1b8b1",
+          "#fbebe9"
+        ]
+      },
+      "veg": {
+        "role": "data",
+        "displayName": "Vegetation Green",
+        "canonical": "#16a34a",
+        "tonalRamp": [
+          "#09431f",
+          "#107535",
+          "#16a64b",
+          "#1dd862",
+          "#47e682",
+          "#78eda3",
+          "#aef4c8",
+          "#e9fcf0"
+        ]
+      },
+      "veg-ink": {
+        "role": "data",
+        "displayName": "Vegetation Ink",
+        "canonical": "#15803d",
+        "tonalRamp": [
+          "#0b421f",
+          "#137236",
+          "#1ba24d",
+          "#23d264",
+          "#4be284",
+          "#7ce9a5",
+          "#b0f2c9",
+          "#e9fbf0"
+        ]
+      },
+      "water": {
+        "role": "data",
+        "displayName": "Water Blue",
+        "canonical": "#2563eb",
+        "tonalRamp": [
+          "#061a46",
+          "#0b2e79",
+          "#1041ad",
+          "#1554e0",
+          "#3f76ed",
+          "#739bf2",
+          "#abc3f7",
+          "#e8eefd"
+        ]
+      },
+      "soil": {
+        "role": "data",
+        "displayName": "Exposed-Soil Ochre",
+        "canonical": "#b45309",
+        "tonalRamp": [
+          "#492204",
+          "#7e3a06",
+          "#b45309",
+          "#e96c0c",
+          "#f58a38",
+          "#f8a96d",
+          "#fbcca8",
+          "#fef1e7"
+        ]
+      },
+      "gain": {
+        "role": "data",
+        "displayName": "Regrowth Teal",
+        "canonical": "#0d9488",
+        "tonalRamp": [
+          "#064641",
+          "#0b7a70",
+          "#0fad9f",
+          "#14e1cf",
+          "#3feedf",
+          "#72f3e7",
+          "#abf8f1",
+          "#e8fdfb"
+        ]
+      },
+      "other": {
+        "role": "data",
+        "displayName": "Other-Change Violet",
+        "canonical": "#7c3aed",
+        "tonalRamp": [
+          "#1e0646",
+          "#340b79",
+          "#4a10ad",
+          "#6014e0",
+          "#803fed",
+          "#a273f2",
+          "#c7abf7",
+          "#efe8fd"
+        ]
+      },
+      "newsoil": {
+        "role": "data",
+        "displayName": "New-Soil Amber",
+        "canonical": "#f59e0b",
+        "tonalRamp": [
+          "#492f03",
+          "#7f5205",
+          "#b57507",
+          "#eb970a",
+          "#f7af36",
+          "#f9c56c",
+          "#fbdca7",
+          "#fef5e7"
+        ]
+      },
+      "map-ground": {
+        "role": "neutral",
+        "displayName": "Map Board",
+        "canonical": "#d9ded3",
+        "tonalRamp": [
+          "#272c21",
+          "#434c39",
+          "#606c51",
+          "#7c8c69",
+          "#98a588",
+          "#b3bda8",
+          "#d2d8cb",
+          "#f2f4f0"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Step title in the work-area header; app name in the rail."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section titles inside a step."
+      },
+      "place-name": {
+        "displayName": "Place Name",
+        "purpose": "Serif italic zone names on the specimen label."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Purpose lines and prose, max 65ch."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Field labels, table headers, slip headers; sentence case."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "Every number, coordinate, date and identifier; tabular, es-CO formatted."
+      }
+    },
+    "shadows": [
+      {
+        "name": "sheet",
+        "value": "0 1px 2px rgb(27 36 48 / 0.06), 0 6px 18px -6px rgb(27 36 48 / 0.18)",
+        "purpose": "Map controls and swipe-map year tags."
+      },
+      {
+        "name": "lift",
+        "value": "0 2px 4px rgb(27 36 48 / 0.08), 0 14px 32px -10px rgb(27 36 48 / 0.32)",
+        "purpose": "Specimen label and swipe-divider handle."
+      },
+      {
+        "name": "slip",
+        "value": "0 1px 2px rgb(27 36 48 / 0.08)",
+        "purpose": "Determination slips stacked on the label."
+      },
+      {
+        "name": "pressed-tab",
+        "value": "0 1px 2px rgb(27 36 48 / 0.12)",
+        "purpose": "Selected segment of a segmented control."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-settle",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Default easing for entrances and disclosure chevrons."
+      },
+      {
+        "name": "enter",
+        "value": "0.35s ease-settle; opacity 0 to 1, translateY 6px to 0",
+        "purpose": "Step content and panels settling into place."
+      },
+      {
+        "name": "slip-settle",
+        "value": "0.55s ease-settle; translateY -14px rotate -1.2deg to rest, 70ms stagger",
+        "purpose": "Determination slips laid onto the label."
+      },
+      {
+        "name": "state",
+        "value": "0.15s",
+        "purpose": "Colour and border transitions on controls."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "durations 0.01ms",
+        "purpose": "All animation and transition collapsed under prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Stamp-violet action at the end of the column it completes.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Analizar zona</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;min-height:2.75rem;padding:0 1.125rem;border-radius:4px;font-family:var(--font-sans,'Atkinson Hyperlegible Next Variable',sans-serif);font-weight:700;font-size:.9375rem;line-height:1;border:0;cursor:pointer;transition:background-color .15s,color .15s,border-color .15s,transform .1s}.ds-btn:active{transform:translateY(1px)}.ds-btn:focus-visible{outline:2px solid #5a4a9c;outline-offset:2px}.ds-btn-primary{background:#5a4a9c;color:#fff}.ds-btn-primary:hover{background:#4a3c86}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Paper button with strong hairline for alternative actions.",
+      "html": "<button class=\"ds-btn-secondary\">Elegir otra zona</button>",
+      "css": ".ds-btn-secondary{display:inline-flex;align-items:center;min-height:2.75rem;padding:0 1.125rem;border-radius:4px;font-family:var(--font-sans,'Atkinson Hyperlegible Next Variable',sans-serif);font-weight:700;font-size:.9375rem;line-height:1;background:#fbfcf8;color:#1b2430;border:1px solid #aab3a6;cursor:pointer;transition:background-color .15s,border-color .15s}.ds-btn-secondary:hover{border-color:#3d4856;background:#fff}.ds-btn-secondary:focus-visible{outline:2px solid #5a4a9c;outline-offset:2px}"
+    },
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Low-emphasis inline action.",
+      "html": "<button class=\"ds-btn-quiet\">Restablecer</button>",
+      "css": ".ds-btn-quiet{min-height:2.75rem;padding:0 .625rem;border-radius:4px;border:0;background:transparent;color:#3d4856;font-family:var(--font-sans,'Atkinson Hyperlegible Next Variable',sans-serif);font-weight:700;font-size:.9375rem;cursor:pointer;transition:background-color .15s,color .15s}.ds-btn-quiet:hover{color:#1b2430;background:#f4f6f0}.ds-btn-quiet:focus-visible{outline:2px solid #5a4a9c;outline-offset:2px}"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Labelled text field with violet focus halo.",
+      "html": "<label class=\"ds-field-label\" for=\"ds-f\">Año a comparar</label><input id=\"ds-f\" class=\"ds-field\" placeholder=\"2017\">",
+      "css": ".ds-field-label{display:block;font-family:var(--font-sans,'Atkinson Hyperlegible Next Variable',sans-serif);font-size:.8125rem;font-weight:600;color:#3d4856;margin-bottom:4px}.ds-field{width:100%;background:#fbfcf8;border:1px solid #aab3a6;border-radius:4px;padding:.5rem .75rem;font-size:.9375rem;color:#1b2430;font-family:inherit;transition:border-color .15s,box-shadow .15s}.ds-field:hover{border-color:#3d4856}.ds-field:focus{outline:none;border-color:#5a4a9c;box-shadow:0 0 0 3px #ecebf6}.ds-field::placeholder{color:#5f6b77}"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "chip",
+      "refersTo": "segmented",
+      "description": "Layer and tab switcher; selected segment rises to paper.",
+      "html": "<div class=\"ds-seg\"><button aria-pressed=\"true\">Clases</button><button aria-pressed=\"false\">Cambio</button><button aria-pressed=\"false\">NDVI</button></div>",
+      "css": ".ds-seg{display:inline-flex;gap:2px;padding:3px;background:#f4f6f0;border:1px solid #cdd3c8;border-radius:5px}.ds-seg>button{padding:.4rem .8rem;border:0;border-radius:3px;background:transparent;font-family:var(--font-sans,'Atkinson Hyperlegible Next Variable',sans-serif);font-size:.875rem;font-weight:600;color:#3d4856;cursor:pointer;transition:background-color .15s,color .15s}.ds-seg>button:hover{color:#1b2430}.ds-seg>button[aria-pressed=true]{background:#fbfcf8;color:#1b2430;box-shadow:0 1px 2px rgb(27 36 48 / .12)}.ds-seg>button:focus-visible{outline:2px solid #5a4a9c;outline-offset:2px}"
+    },
+    {
+      "name": "Sheet",
+      "kind": "card",
+      "refersTo": "sheet",
+      "description": "In-flow paper block with hairline border and no shadow.",
+      "html": "<section class=\"ds-sheet\"><p class=\"ds-sheet-t\">Cobertura por clase</p><p class=\"ds-sheet-n\">% del área sin nubes en cada escena</p></section>",
+      "css": ".ds-sheet{background:#fbfcf8;border:1px solid #cdd3c8;border-radius:6px;padding:16px;font-family:var(--font-sans,'Atkinson Hyperlegible Next Variable',sans-serif);color:#1b2430}.ds-sheet-t{margin:0;font-weight:600}.ds-sheet-n{margin:2px 0 0;font-size:.875rem;color:#5f6b77}"
+    },
+    {
+      "name": "Step Rail",
+      "kind": "nav",
+      "refersTo": "rail",
+      "description": "Folder-green rail with numbered steps.",
+      "html": "<nav class=\"ds-rail\"><p class=\"ds-rail-name\">Imágenes Satelitales</p><ol><li class=\"ds-step ds-done\"><span><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M20 6 9 17l-5-5\"/></svg></span>Zona y escena</li><li class=\"ds-step ds-current\"><span>2</span>Bandas</li><li class=\"ds-step\"><span>3</span>Índices</li></ol></nav>",
+      "css": ".ds-rail{width:248px;background:#1e3a2b;color:#e3ebe2;padding:28px 12px;font-family:var(--font-sans,'Atkinson Hyperlegible Next Variable',sans-serif)}.ds-rail-name{font-family:var(--font-serif,'Source Serif 4 Variable',serif);font-size:1.25rem;font-weight:600;margin:0 8px 20px}.ds-rail ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}.ds-step{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:5px;font-size:.9375rem;font-weight:600;color:#a9bdaf;cursor:pointer;transition:background-color .15s}.ds-step:hover{background:#2a4c39}.ds-step span{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;border:1px solid #2a4c39;font-family:var(--font-mono,'Courier Prime',monospace);font-size:.875rem}.ds-current{background:#2a4c39;color:#e3ebe2}.ds-current span{background:#e3ebe2;color:#1e3a2b}.ds-done{color:#e3ebe2}"
+    },
+    {
+      "name": "Specimen Label",
+      "kind": "custom",
+      "refersTo": "specimen-label",
+      "description": "Signature floating label with a stacked determination slip and the significance stamp.",
+      "html": "<section class=\"ds-label\"><div class=\"ds-slip\"><p class=\"ds-slip-h\"><span>Det. <b class=\"ds-fig\">2017</b></span><span class=\"ds-fig\">2017-01-14</span></p><p class=\"ds-fig ds-slip-v\"><span style=\"color:#15803d;font-weight:700\">V 81,2 %</span><span style=\"color:#2563eb\">A 4,1 %</span><span style=\"color:#b45309\">S 9,8 %</span></p></div><div class=\"ds-card\"><p class=\"ds-place\">El Bagre</p><p class=\"ds-fig ds-coord\">7°36′N 74°48′O</p><p class=\"ds-stamp\"><b>Vegetación −93,6 ha/año</b><br><small>Tendencia significativa · Mann-Kendall p = 0,009</small></p></div></section>",
+      "css": ".ds-label{width:300px;font-family:var(--font-sans,'Atkinson Hyperlegible Next Variable',sans-serif);color:#1b2430}.ds-fig{font-family:var(--font-mono,'Courier Prime',monospace);font-variant-numeric:tabular-nums}.ds-slip{background:#fbfcf8;border:1px solid #cdd3c8;border-radius:4px 4px 0 0;padding:6px 12px 10px;margin:0 0 -4px 6px;box-shadow:0 1px 2px rgb(27 36 48 / .08)}.ds-slip-h{display:flex;justify-content:space-between;margin:0;font-size:.75rem;color:#3d4856;font-weight:600}.ds-slip-v{display:flex;gap:12px;margin:2px 0 0;font-size:.8125rem}.ds-card{position:relative;background:#fbfcf8;border:1px solid #aab3a6;border-radius:4px;padding:12px 14px;box-shadow:0 2px 4px rgb(27 36 48 / .08),0 14px 32px -10px rgb(27 36 48 / .32)}.ds-place{margin:0;font-family:var(--font-serif,'Source Serif 4 Variable',serif);font-style:italic;font-size:1.125rem}.ds-coord{margin:2px 0 0;font-size:.875rem;color:#3d4856}.ds-stamp{margin:10px 0 0;font-size:.875rem;padding:6px 8px;border-radius:3px;border:1px solid #b42318;color:#b42318;background:#fbeae8}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Pliego de herbario",
+    "overview": "Every analysed zone is treated as a specimen of the Herbario Nacional Colombiano tradition: a mounting sheet with a typed label (locality, coordinates, collection date, collector) and dated determination slips added year after year without erasing the earlier ones. The interface is a light archival workroom: grey-green mounting board as the ground, near-white label paper for every working block, iron-gall ink for text, and a deep genus-folder green rail that holds the steps. It deliberately refuses the category default of the dark GIS dashboard with neon accent and glass cards.\n\nDensity is that of an instrument, not a brochure: hairline-ruled sheets, tabular monospace figures, data tables, and the map as the dominant surface. Colour is spent on meaning. Violet is the hand of the archivist (action, selection, focus); the three class colours are the data; type-specimen red is the alarm. Everything else is paper, ink and rule.\n\nMotion is small and physical: blocks settle up 6px into place, and determination slips drop onto the label with a slight rotation as if laid by hand. All motion collapses under reduced-motion.",
+    "keyCharacteristics": [
+      "Light theme only: mounting-board ground, label-paper sheets, iron-gall ink.",
+      "Folder-green rail as the committed shell; violet stamp for every interactive selection.",
+      "Three-voice type: humanist sans for UI, serif for titles and italic place names, typewriter mono for every figure.",
+      "Hairline 1px rules and small radii (2 to 6px); soft shadow only on floating objects.",
+      "Colour-blind-validated class and change palettes, always paired with a text label.",
+      "Spanish (es-CO) number formatting everywhere: decimal comma, period thousands separator."
+    ],
+    "rules": [
+      {
+        "name": "The Reserved Red Rule",
+        "body": "Red marks vegetation loss, statistical significance and errors that block the user; nothing decorative ever wears it. A trend that is not significant is drawn in muted grey, never red, in the app and in the exported PNG alike.",
+        "section": "colors"
+      },
+      {
+        "name": "The Named Swatch Rule",
+        "body": "No class or change colour appears without its Spanish label beside it (legends, slips, chart legends, PNG legends). Identity is never colour-alone.",
+        "section": "colors"
+      },
+      {
+        "name": "The Green-Text Rule",
+        "body": "Green text uses veg-ink; veg is reserved for strokes, swatches and icons.",
+        "section": "colors"
+      },
+      {
+        "name": "The Typed Figure Rule",
+        "body": "If it is a number, coordinate, date or identifier, it is set in the mono figure style with tabular numerals and es-CO formatting (decimal comma, e.g. \"12,5 %\", \"p < 0,001\"), and a missing value is an em dash.",
+        "section": "typography"
+      },
+      {
+        "name": "The Italic Locality Rule",
+        "body": "Serif italic is reserved for place names on the label; it is not used for emphasis.",
+        "section": "typography"
+      },
+      {
+        "name": "The Floating-Only Shadow Rule",
+        "body": "A shadow means the object floats over the map or over another sheet. Sheets in the document flow are bordered, never shadowed.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** set every figure in Courier Prime with tabular numerals and es-CO formatting (\"1.234,5 ha\", \"p = 0,009\").",
+      "**Do** pair every class or change colour with its Spanish label.",
+      "**Do** use veg-ink (4.87:1) for green text and keep veg, gain and newsoil for strokes and swatches.",
+      "**Do** reuse the exact class (veg, water, soil) and change (signal, gain, other, newsoil) values in both frontend and backend rasters.",
+      "**Do** start quantity axes at zero and draw excluded years as gaps.",
+      "**Do** draw a non-significant trend in muted grey and say \"Sin tendencia significativa\".",
+      "**Do** keep stamp violet as the single action and focus colour.",
+      "**Do** load fonts from the @fontsource packages, never a CDN."
+    ],
+    "donts": [
+      "**Don't** use type-specimen red for decoration, emphasis or a non-significant trend.",
+      "**Don't** add a dark theme, neon accents or glass panels; the world is light paper.",
+      "**Don't** shadow in-flow sheets; shadows belong to floating objects only.",
+      "**Don't** set uppercase tracked labels or kickers above titles; labels are sentence case.",
+      "**Don't** connect a line across an excluded year or plot it as zero.",
+      "**Don't** round sheets, controls or labels beyond 6px; only progress tracks, gradient keys and step numbers are fully rounded."
+    ]
+  }
+}
