@@ -1,15 +1,23 @@
 import { useState } from 'react';
-import { Search, AlertCircle, CheckCircle2, Loader2, MapPin, Calendar, Cloud } from 'lucide-react';
-import type { SearchResponse } from '../types';
+import { Search, AlertCircle, Loader2, MapPin, Calendar, Cloud, Images, ArrowRight } from 'lucide-react';
+import type { BBox, SceneCandidate, ScenesResponse, SearchResponse } from '../types';
+import { MAX_AREA_KM2, PRESETS, bboxInRegion, bboxIsTooLarge } from '../lib/geo';
+import type { Region } from '../lib/geo';
+import { useRegion } from '../hooks/useRegion';
+import AoiMap from './map/AoiMap';
+import ScenePicker from './ScenePicker';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const API_BASE = '';
 
-const DEFAULT_BBOX: [number, number, number, number] = [-74.85, 7.55, -74.75, 7.65];
-const DEFAULT_DATE_START = '2023-01-01';
-const DEFAULT_DATE_END = '2023-12-31';
-const DEFAULT_CLOUD = 20;
+const DEFAULT_BBOX: BBox = PRESETS[0].bbox;
+const LAST_YEAR = new Date().getFullYear() - 1;
+const DEFAULT_DATE_START = `${LAST_YEAR}-01-01`;
+const DEFAULT_DATE_END = `${LAST_YEAR}-12-31`;
+// El umbral filtra por nubosidad del tile completo; las escenas se ordenan luego
+// por nubosidad dentro de la zona, así que conviene un umbral permisivo.
+const DEFAULT_CLOUD = 60;
 
 // ── Validation helpers ─────────────────────────────────────────────────────────
 
@@ -42,7 +50,8 @@ function validateForm(
   latMax: string,
   dateStart: string,
   dateEnd: string,
-  cloud: string
+  cloud: string,
+  region: Region | null = null,
 ): ValidationErrors {
   const errors: ValidationErrors = {};
 
@@ -70,6 +79,13 @@ function validateForm(
       : 'lat_min debe ser menor que lat_max';
   }
 
+  if (!errors.lonMin && !errors.lonMax && !errors.latMin && !errors.latMax && !errors.bboxRelation
+      && bboxIsTooLarge([lonMinN, latMinN, lonMaxN, latMaxN]))
+    errors.bboxRelation = `La zona supera el máximo de ${MAX_AREA_KM2} km²`;
+  else if (region && !errors.lonMin && !errors.lonMax && !errors.latMin && !errors.latMax && !errors.bboxRelation
+      && !bboxInRegion([lonMinN, latMinN, lonMaxN, latMaxN], region))
+    errors.bboxRelation = `La zona debe estar en ${region.name}`;
+
   // Date format and validity checks (R1.6)
   if (!isValidDate(dateStart))
     errors.dateStart = 'Fecha de inicio inválida (formato YYYY-MM-DD)';
@@ -88,6 +104,17 @@ function validateForm(
   return errors;
 }
 
+// ── Small components ───────────────────────────────────────────────────────────
+
+function ErrorMsg({ msg }: { msg?: string }) {
+  return msg ? (
+    <p className="mt-1.5 flex items-center gap-1.5 text-xs text-red-400 font-medium">
+      <AlertCircle className="w-3 h-3 flex-shrink-0" />
+      {msg}
+    </p>
+  ) : null;
+}
+
 // ── Props ──────────────────────────────────────────────────────────────────────
 
 interface SearchPanelProps {
@@ -97,6 +124,7 @@ interface SearchPanelProps {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
+  const region = useRegion();
   // Form state
   const [lonMin, setLonMin] = useState(DEFAULT_BBOX[0].toString());
   const [latMin, setLatMin] = useState(DEFAULT_BBOX[1].toString());
@@ -111,7 +139,39 @@ export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
   const [touched, setTouched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [result, setResult] = useState<SearchResponse | null>(null);
+  const [candidates, setCandidates] = useState<{ searchId: string; scenes: SceneCandidate[] } | null>(null);
+  const [selectedId, setSelectedId] = useState<string>('');
+  const [confirming, setConfirming] = useState(false);
+
+  const currentBBox = (): BBox | null => {
+    const b = [lonMin, latMin, lonMax, latMax].map(parseFloat) as BBox;
+    return b.some(isNaN) || b[0] >= b[2] || b[1] >= b[3] ? null : b;
+  };
+
+  const setBBox = (b: BBox) => {
+    const [w, s_, e, n] = b.map(String);
+    setLonMin(w); setLatMin(s_); setLonMax(e); setLatMax(n);
+    setCandidates(null);
+    revalidate({ lonMin: w, latMin: s_, lonMax: e, latMax: n });
+  };
+
+  const requestBody = () => ({
+    bbox: [parseFloat(lonMin), parseFloat(latMin), parseFloat(lonMax), parseFloat(latMax)] as BBox,
+    time_range: `${dateStart}/${dateEnd}`,
+    cloud_cover_threshold: parseInt(cloud, 10),
+  });
+
+  const describeError = async (res: Response) => {
+    const data = await res.json().catch(() => ({}));
+    const detail = data?.detail ?? `Error ${res.status}`;
+    // Errores de validación de FastAPI: lista de {msg}
+    if (Array.isArray(detail)) {
+      return detail.map((d: { msg?: string }) => (d.msg ?? '').replace(/^Value error, /, '')).join(' · ');
+    }
+    if (res.status === 404) return `${detail} — Intenta ampliar el rango de fechas o el umbral de nubes.`;
+    if (res.status === 502) return 'El catálogo de Planetary Computer no está disponible temporalmente. Intenta de nuevo.';
+    return typeof detail === 'string' ? detail : JSON.stringify(detail);
+  };
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -120,45 +180,53 @@ export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
     setTouched(true);
     setApiError(null);
 
-    const validationErrors = validateForm(lonMin, latMin, lonMax, latMax, dateStart, dateEnd, cloud);
+    const validationErrors = validateForm(lonMin, latMin, lonMax, latMax, dateStart, dateEnd, cloud, region);
     setErrors(validationErrors);
 
     if (Object.keys(validationErrors).length > 0) return;
 
     setLoading(true);
+    setCandidates(null);
     try {
-      const body = {
-        bbox: [parseFloat(lonMin), parseFloat(latMin), parseFloat(lonMax), parseFloat(latMax)] as [number, number, number, number],
-        time_range: `${dateStart}/${dateEnd}`,
-        cloud_cover_threshold: parseInt(cloud, 10),
-      };
-
-      const res = await fetch(`${API_BASE}/search`, {
+      const res = await fetch(`${API_BASE}/scenes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(requestBody()),
       });
-
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const detail = data?.detail ?? `Error ${res.status}`;
-        if (res.status === 404) {
-          setApiError(`No se encontraron escenas. ${detail} — Intenta ampliar el rango de fechas o el umbral de nubes.`);
-        } else if (res.status === 502) {
-          setApiError('El catálogo de Planetary Computer no está disponible temporalmente. Intenta de nuevo.');
-        } else {
-          setApiError(typeof detail === 'string' ? detail : JSON.stringify(detail));
-        }
+        setApiError(await describeError(res));
         return;
       }
-
-      const data: SearchResponse = await res.json();
-      setResult(data);
-      onSearchComplete(data);
+      const data: ScenesResponse = await res.json();
+      setCandidates({ searchId: data.search_id, scenes: data.scenes });
+      setSelectedId(data.scenes[0]?.id ?? '');
     } catch (err: unknown) {
       setApiError(err instanceof Error ? err.message : 'Error de red al conectar con el servidor.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!candidates || !selectedId) return;
+    setConfirming(true);
+    setApiError(null);
+    try {
+      const res = await fetch(`${API_BASE}/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...requestBody(), search_id: candidates.searchId, scene_id: selectedId }),
+      });
+      if (!res.ok) {
+        setApiError(await describeError(res));
+        return;
+      }
+      const data: SearchResponse = await res.json();
+      onSearchComplete(data);
+    } catch (err: unknown) {
+      setApiError(err instanceof Error ? err.message : 'Error de red al conectar con el servidor.');
+    } finally {
+      setConfirming(false);
     }
   };
 
@@ -178,6 +246,7 @@ export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
       overrides.dateStart ?? dateStart,
       overrides.dateEnd ?? dateEnd,
       overrides.cloud ?? cloud,
+      region,
     ));
   };
 
@@ -190,18 +259,11 @@ export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
       hasError ? 'border-red-500/60 focus:border-red-500' : 'border-white/10 focus:border-emerald-500/50'
     } rounded-xl px-4 py-3 text-sm outline-none transition-all font-mono text-zinc-200 placeholder-zinc-600`;
 
-  const ErrorMsg = ({ msg }: { msg?: string }) =>
-    msg ? (
-      <p className="mt-1.5 flex items-center gap-1.5 text-xs text-red-400 font-medium">
-        <AlertCircle className="w-3 h-3 flex-shrink-0" />
-        {msg}
-      </p>
-    ) : null;
 
   // ── JSX ──────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="w-full max-w-2xl mx-auto animate-fade-in">
+    <div className="w-full max-w-4xl mx-auto animate-fade-in">
       <form onSubmit={handleSubmit} noValidate className="space-y-6">
 
         {/* ── Bounding Box ── */}
@@ -211,12 +273,14 @@ export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
               <MapPin className="w-4 h-4 text-emerald-500" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-zinc-200">Bounding Box</h3>
-              <p className="text-xs text-zinc-500">Coordenadas EPSG:4326 — [lon_min, lat_min, lon_max, lat_max]</p>
+              <h3 className="text-sm font-bold text-zinc-200">Zona de interés</h3>
+              <p className="text-xs text-zinc-500">Dibuja un rectángulo, elige una zona de ejemplo o edita las coordenadas EPSG:4326</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <AoiMap bbox={currentBBox()} onChange={setBBox} />
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-5">
             {/* lon_min */}
             <div>
               <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase tracking-widest">
@@ -312,7 +376,7 @@ export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
               <input
                 type="date"
                 value={dateStart}
-                onChange={e => { setDateStart(e.target.value); revalidate({ dateStart: e.target.value }); }}
+                onChange={e => { setDateStart(e.target.value); setCandidates(null); revalidate({ dateStart: e.target.value }); }}
                 className={inputClass(!!errors.dateStart)}
               />
               <ErrorMsg msg={errors.dateStart} />
@@ -326,7 +390,7 @@ export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
               <input
                 type="date"
                 value={dateEnd}
-                onChange={e => { setDateEnd(e.target.value); revalidate({ dateEnd: e.target.value }); }}
+                onChange={e => { setDateEnd(e.target.value); setCandidates(null); revalidate({ dateEnd: e.target.value }); }}
                 className={inputClass(!!errors.dateEnd)}
               />
               <ErrorMsg msg={errors.dateEnd} />
@@ -350,7 +414,9 @@ export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
             </div>
             <div>
               <h3 className="text-sm font-bold text-zinc-200">Umbral de Nubosidad</h3>
-              <p className="text-xs text-zinc-500">Porcentaje máximo de cobertura nubosa [0–100]</p>
+              <p className="text-xs text-zinc-500">
+                Máximo de nubes del tile completo [0–100]. Luego se ordenan por nubes dentro de tu zona.
+              </p>
             </div>
           </div>
 
@@ -361,7 +427,7 @@ export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
               max={100}
               step={1}
               value={parseInt(cloud) || 0}
-              onChange={e => { setCloud(e.target.value); revalidate({ cloud: e.target.value }); }}
+              onChange={e => { setCloud(e.target.value); setCandidates(null); revalidate({ cloud: e.target.value }); }}
               className="flex-1 h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
             />
             <input
@@ -370,7 +436,7 @@ export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
               max={100}
               step={1}
               value={cloud}
-              onChange={e => { setCloud(e.target.value); revalidate({ cloud: e.target.value }); }}
+              onChange={e => { setCloud(e.target.value); setCandidates(null); revalidate({ cloud: e.target.value }); }}
               className={`w-20 text-center ${inputClass(!!errors.cloud)}`}
               placeholder="0–100"
             />
@@ -407,39 +473,50 @@ export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
           {loading ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin" />
-              Buscando escena…
+              Buscando escenas y midiendo nubes en tu zona…
             </>
           ) : (
             <>
               <Search className="w-5 h-5" />
-              Buscar escena Sentinel-2
+              Buscar escenas Sentinel-2
             </>
           )}
         </button>
       </form>
 
-      {/* ── Scene result card ── */}
-      {result && !loading && (
-        <div className="mt-6 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-6 animate-fade-in">
-          <div className="flex items-center gap-2 mb-4">
-            <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-            <h3 className="font-bold text-emerald-400">Escena encontrada</h3>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-black/30 rounded-xl p-4">
-              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">ID de escena</p>
-              <p className="text-xs font-mono text-zinc-300 break-all">{result.scene_id}</p>
+      {/* ── Scene picker ── */}
+      {candidates && !loading && (
+        <div className="mt-6 bg-zinc-900/40 border border-white/5 rounded-2xl p-6 space-y-5 animate-fade-in">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+              <Images className="w-4 h-4 text-emerald-500" />
             </div>
-            <div className="bg-black/30 rounded-xl p-4">
-              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Fecha de adquisición</p>
-              <p className="text-sm font-mono text-zinc-200">{result.datetime.slice(0, 10)}</p>
-            </div>
-            <div className="bg-black/30 rounded-xl p-4">
-              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Cobertura nubosa</p>
-              <p className="text-sm font-mono text-emerald-400 font-bold">{result.cloud_cover.toFixed(1)} %</p>
+            <div>
+              <h3 className="text-sm font-bold text-zinc-200">
+                {candidates.scenes.length} escenas candidatas
+              </h3>
+              <p className="text-xs text-zinc-500">
+                Ordenadas por nubes dentro de tu zona (capa SCL). Elige la que prefieras.
+              </p>
             </div>
           </div>
-          <p className="mt-4 text-xs text-zinc-500 font-mono">Session ID: {result.session_id}</p>
+
+          <ScenePicker
+            searchId={candidates.searchId}
+            scenes={candidates.scenes}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+          />
+
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={!selectedId || confirming}
+            className="w-full py-4 rounded-2xl font-bold text-base transition-all shadow-lg flex items-center justify-center gap-3 bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20 active:scale-[0.98] disabled:opacity-60 disabled:cursor-wait"
+          >
+            {confirming ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5" />}
+            Usar escena del {candidates.scenes.find(c => c.id === selectedId)?.datetime.slice(0, 10)}
+          </button>
         </div>
       )}
     </div>
