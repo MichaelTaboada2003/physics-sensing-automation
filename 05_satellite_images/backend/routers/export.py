@@ -24,7 +24,7 @@ from fastapi.responses import Response
 
 from core.compare import class_stats, pixel_area_m2
 from core.export import export_geotiff, render_classified_map
-from core.report import changes_geojson, report_html, stats_csv
+from core.report import changes_geojson, render_before_after, render_trend_chart, report_html, stats_csv
 from session_store import get_session
 
 router = APIRouter()
@@ -334,3 +334,44 @@ def map_stats(
             if session.class_map is not None else None
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Imágenes para publicar
+# ---------------------------------------------------------------------------
+
+def _clean_title(title: str) -> str:
+    """Título libre para la imagen: una línea, sin caracteres de control."""
+    return " ".join(title.split())[:120]
+
+
+@router.get("/export/beforeafter.png")
+def export_before_after(
+    session_id: str = Query(..., description="Identificador de la sesión activa."),
+    year: int = Query(..., description="Año comparado."),
+    kind: str = Query("rgb", pattern="^(rgb|class)$", description="rgb = color real, class = clasificación."),
+    title: str = Query("", max_length=200, description="Título opcional (p. ej. el nombre de la zona)."),
+) -> Response:
+    """Antes/después lado a lado con fechas, escala y crédito de Copernicus."""
+    session = _get_session_or_404(session_id)
+    _require_class_map(session, session_id)
+    if year not in session.comparisons:
+        raise HTTPException(status_code=409, detail=f"No hay comparativa para {year}. Ejecute POST /compare.")
+    png = render_before_after(session, year, kind, _clean_title(title))
+    return Response(content=png, media_type="image/png",
+                    headers={"Content-Disposition": f'attachment; filename="antes_despues_{year}_{kind}.png"'})
+
+
+@router.get("/export/trend.png")
+def export_trend(
+    session_id: str = Query(..., description="Identificador de la sesión activa."),
+    title: str = Query("", max_length=200, description="Título opcional."),
+) -> Response:
+    """Gráfico de la serie de vegetación con su tendencia, significancia y crédito."""
+    session = _get_session_or_404(session_id)
+    _require_class_map(session, session_id)
+    if len(session.comparisons) < 3:
+        raise HTTPException(status_code=409, detail="Calcule la serie temporal (al menos 3 años) antes de exportar el gráfico.")
+    png = render_trend_chart(session, _clean_title(title))
+    return Response(content=png, media_type="image/png",
+                    headers={"Content-Disposition": 'attachment; filename="tendencia_vegetacion.png"'})

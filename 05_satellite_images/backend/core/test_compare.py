@@ -228,6 +228,13 @@ def test_timeseries_layers_and_exports():
     report = client.get("/export/report.html", params={"session_id": sid})
     assert report.status_code == 200 and "Evolución temporal" in report.text
 
+    for kind in ("rgb", "class"):
+        ba = client.get("/export/beforeafter.png", params={"session_id": sid, "year": year, "kind": kind, "title": "El Bagre"})
+        assert ba.status_code == 200 and ba.content[:4] == b"\x89PNG"
+    assert client.get("/export/beforeafter.png", params={"session_id": sid, "year": 1999}).status_code == 409
+    tr = client.get("/export/trend.png", params={"session_id": sid, "title": "El Bagre"})
+    assert tr.status_code == 200 and tr.content[:4] == b"\x89PNG"
+
 
 def test_train_reports_holdout_metrics():
     sid, session = _make_session()

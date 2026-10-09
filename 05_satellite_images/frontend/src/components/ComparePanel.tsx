@@ -4,7 +4,7 @@ import { useLayerBounds } from '../hooks/useLayerBounds';
 import SwipeMap from './map/SwipeMap';
 import LayerControls from './map/LayerControls';
 import TimeSeriesPanel from './TimeSeriesPanel';
-import { Play, Loader2, Download, FileText, CalendarRange, LineChart as LineChartIcon } from 'lucide-react';
+import { Play, Loader2, Download, FileText, CalendarRange, Image as ImageIcon, LineChart as LineChartIcon } from 'lucide-react';
 import type { StreamLine, ComparisonSummary, ClassKey, Zone } from '../types';
 import { useProgressStream } from '../hooks/useProgressStream';
 import { useMapStats } from '../hooks/useMapStats';
@@ -199,6 +199,7 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo }: 
             <TimeSeriesPanel
               sessionId={sessionId}
               sceneYear={sceneYear}
+              zoneName={zone?.name ?? ''}
               series={series}
               onSeries={setSeries}
               onSelectYear={showYear}
@@ -400,6 +401,22 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo }: 
               </details>
 
               <div className="flex flex-wrap gap-3">
+                <a
+                  href={`${API_BASE}/export/beforeafter.png?session_id=${sessionId}&year=${active.year}&kind=rgb&title=${encodeURIComponent(zone?.name ?? '')}`}
+                  download
+                  className="btn btn-primary"
+                >
+                  <ImageIcon className="w-4 h-4" />
+                  Imagen antes/después para publicar
+                </a>
+                <a
+                  href={`${API_BASE}/export/beforeafter.png?session_id=${sessionId}&year=${active.year}&kind=class&title=${encodeURIComponent(zone?.name ?? '')}`}
+                  download
+                  className="btn btn-secondary"
+                >
+                  <ImageIcon className="w-4 h-4" />
+                  Antes/después clasificado
+                </a>
                 <a href={`${API_BASE}/export/changes.geojson?session_id=${sessionId}&year=${active.year}`} className="btn btn-secondary">
                   <Download className="w-4 h-4" />
                   Polígonos de cambio (GeoJSON)

@@ -24,10 +24,15 @@ import rasterio.warp
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.ticker
 
 from core.bands import generate_true_color
+from matplotlib.colors import ListedColormap
+
 from core.compare import (
     CHANGE_LABELS,
+    _rgb,
+    _rgb_stretch,
     build_series,
     build_summary,
     change_map,
@@ -35,7 +40,7 @@ from core.compare import (
     render_comparison,
     scene_year,
 )
-from core.export import render_classified_map
+from core.export import CLASS_COLORS, _class_map_to_index, render_classified_map
 from session_store import SessionData
 
 _CLASS_ROWS = [("vegetation", "Vegetación"), ("water", "Agua"), ("mining", "Minería / suelo expuesto"),
@@ -262,3 +267,120 @@ table.kv th {{ text-align: left; width: 220px; background: #fafafa; }} table.kv 
 </style></head><body>
 {body}
 </body></html>"""
+
+
+# ---------------------------------------------------------------------------
+# Imágenes para publicar (periodismo)
+# ---------------------------------------------------------------------------
+
+_INK = "#1b2430"
+_MUTED = "#5f6b77"
+_PAPER = "#fbfcf8"
+
+
+def _es(x: float, digits: int = 1, signed: bool = False) -> str:
+    """Número con coma decimal y espacio de miles (convención en español)."""
+    txt = f"{x:{'+' if signed else ''},.{digits}f}"
+    return txt.replace(",", " ").replace(".", ",")
+
+
+def _credit(years: list[int]) -> str:
+    ys_sorted = sorted(set(years))
+    ys = ", ".join(str(y) for y in ys_sorted) if len(ys_sorted) <= 3 else f"{ys_sorted[0]}–{ys_sorted[-1]}"
+    return f"Contiene datos modificados de Copernicus Sentinel-2 ({ys}). Clasificación: Random Forest con pseudo-etiquetado."
+
+
+def _scale_bar(ax, width_px: int, pixel_m: float) -> None:
+    """Barra de escala de 1, 2 o 5 km en la esquina inferior izquierda."""
+    total_km = width_px * pixel_m / 1000
+    km = next((k for k in (5, 2, 1, 0.5) if k <= total_km / 4), 0.5)
+    bar_px = km * 1000 / pixel_m
+    x0, y0 = width_px * 0.04, ax.get_ylim()[0] * 0.95
+    ax.plot([x0, x0 + bar_px], [y0, y0], color="white", linewidth=4, solid_capstyle="butt")
+    ax.plot([x0, x0 + bar_px], [y0, y0], color=_INK, linewidth=2, solid_capstyle="butt")
+    label = f"{km:g} km"
+    ax.text(x0 + bar_px / 2, y0 - width_px * 0.02, label, color="white", ha="center", va="bottom",
+            fontsize=10, fontweight="bold",
+            bbox={"facecolor": _INK, "edgecolor": "none", "alpha": 0.6, "pad": 1.5})
+
+
+def render_before_after(session: SessionData, year: int, kind: str = "rgb", title: str = "") -> bytes:
+    """Antes/después lado a lado, mismo contraste, con fechas, escala y crédito."""
+    comp = session.comparisons[year]
+    cur_year = scene_year(session)
+    p_lo, p_hi = _rgb_stretch(session)
+    if kind == "class":
+        panels = [_class_map_to_index(comp["class_map"]), _class_map_to_index(session.class_map)]
+        imshow_kw = {"cmap": ListedColormap(CLASS_COLORS), "vmin": 0, "vmax": 3, "interpolation": "nearest"}
+    else:
+        panels = [_rgb(comp["rgb"], p_lo, p_hi), _rgb(session.bands, p_lo, p_hi)]
+        imshow_kw = {}
+    dates = [comp["scene"]["datetime"][:10], session.scene_datetime[:10]]
+
+    h, w = session.class_map.shape
+    fig_w = 14
+    fig_h = fig_w / 2 * h / w + 1.6
+    fig, axes = plt.subplots(1, 2, figsize=(fig_w, fig_h), dpi=120, facecolor=_PAPER)
+    for ax, img, y, d in zip(axes, panels, (year, cur_year), dates):
+        ax.imshow(img, **imshow_kw)
+        ax.set_title(f"{y}", loc="left", fontsize=20, fontweight="bold", color=_INK, pad=6)
+        ax.text(1.0, 1.01, d, transform=ax.transAxes, ha="right", va="bottom", fontsize=11, color=_MUTED)
+        ax.axis("off")
+        _scale_bar(ax, w, pixel_area_m2(session) ** 0.5)
+    if title:
+        fig.suptitle(title, x=0.012, ha="left", fontsize=15, color=_INK, y=0.995)
+    fig.text(0.012, 0.012, _credit([year, cur_year]), fontsize=9, color=_MUTED, ha="left", va="bottom")
+    fig.tight_layout(rect=(0, 0.04, 1, 0.97 if title else 1))
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", facecolor=_PAPER)
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def render_trend_chart(session: SessionData, title: str = "") -> bytes:
+    """Serie de vegetación con la recta de Theil-Sen, su veredicto y el crédito."""
+    series = build_series(session)
+    pts = series["points"]
+    years = [p["year"] for p in pts]
+    veg_ha = [
+        (p["stats"]["vegetation"]["percent_clear"] or 0) / 100 * series["total_hectares"] for p in pts
+    ]
+    trend = series["trends"].get("vegetation")
+
+    fig, ax = plt.subplots(figsize=(10, 5.4), dpi=130, facecolor=_PAPER)
+    ax.set_facecolor(_PAPER)
+    ax.plot(years, veg_ha, marker="o", markersize=7, linewidth=2.4, color="#16a34a",
+            markeredgecolor=_PAPER, markeredgewidth=1.5, label="Vegetación (estimada)")
+    if trend:
+        used = [p for p in pts if p["year"] in series["years_used_for_trend"]]
+        x = np.array([p["year"] for p in used], dtype=float)
+        y = np.array([(p["stats"]["vegetation"]["percent_clear"] or 0) / 100 * series["total_hectares"] for p in used])
+        slope = trend["ha_per_year"]
+        intercept = float(np.median(y - slope * x))
+        color = "#b42318" if trend["significant"] else _MUTED
+        share = 100 * slope / series["total_hectares"]
+        ax.plot(x, slope * x + intercept, linestyle="--", linewidth=1.6, color=color,
+                label=f"Tendencia Theil-Sen: {_es(slope, 1, True)} ha/año ({_es(share, 2, True)} % del área por año)")
+        verdict = ("Tendencia estadísticamente significativa" if trend["significant"]
+                   else "Sin tendencia estadísticamente significativa")
+        ax.text(0.0, 1.02, f"{verdict} (Mann-Kendall p = {_es(trend['p_value'], 3)}; "
+                f"IC 95 % {_es(trend['ha_per_year_low'], 1, True)} a {_es(trend['ha_per_year_high'], 1, True)} ha/año)",
+                transform=ax.transAxes, fontsize=10, color=color, ha="left", va="bottom")
+    # Eje desde cero: no exagerar visualmente un cambio de pocos puntos porcentuales
+    ax.set_ylim(0, max(veg_ha) * 1.08 if veg_ha else 1)
+    ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: _es(v, 0)))
+    ax.set_ylabel("Hectáreas de vegetación", color=_INK)
+    ax.set_xticks(years)
+    ax.tick_params(colors=_INK)
+    ax.grid(axis="y", color="#e1e5dc")
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.legend(frameon=False, loc="lower left", fontsize=10)
+    if title:
+        fig.suptitle(title, x=0.012, ha="left", fontsize=15, color=_INK)
+    fig.text(0.012, 0.012, _credit(years) + " Superficie estimada sobre el área sin nubes.",
+             fontsize=8.5, color=_MUTED, ha="left", va="bottom")
+    fig.tight_layout(rect=(0, 0.05, 1, 0.95 if title else 1))
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", facecolor=_PAPER)
+    plt.close(fig)
+    return buf.getvalue()

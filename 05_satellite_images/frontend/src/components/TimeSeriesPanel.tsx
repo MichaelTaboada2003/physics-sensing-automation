@@ -18,6 +18,7 @@ import {
   TrendingDown,
   Minus,
   ArrowRight,
+  Image as ImageIcon,
 } from 'lucide-react';
 import type { StreamLine, TimeSeries, Trend } from '../types';
 import { useProgressStream } from '../hooks/useProgressStream';
@@ -42,6 +43,7 @@ type Status = 'idle' | 'running' | 'done' | 'error';
 interface TimeSeriesPanelProps {
   sessionId: string;
   sceneYear: number;
+  zoneName: string;
   series: TimeSeries | null;
   onSeries: (s: TimeSeries) => void;
   onSelectYear: (year: number) => void;
@@ -70,7 +72,7 @@ function Verdict({ trend }: { trend: Trend }) {
   );
 }
 
-export default function TimeSeriesPanel({ sessionId, sceneYear, series, onSeries, onSelectYear }: TimeSeriesPanelProps) {
+export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series, onSeries, onSelectYear }: TimeSeriesPanelProps) {
   const [status, setStatus] = useState<Status>(series ? 'done' : 'idle');
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<StreamLine[]>([]);
@@ -151,6 +153,15 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, series, onSeries
                 : <>No es estadísticamente significativa (p = <span className="figure">{fmtP(veg.p_value)}</span>): puede deberse al azar.</>}
             </p>
           )}
+
+          <a
+            href={`${API_BASE}/export/trend.png?session_id=${sessionId}&title=${encodeURIComponent(`Vegetación en ${zoneName}`)}`}
+            download
+            className="btn btn-primary"
+          >
+            <ImageIcon className="w-4 h-4" />
+            Gráfico de tendencia para publicar
+          </a>
 
           <div className="sheet overflow-x-auto">
             <table className="data-table">
