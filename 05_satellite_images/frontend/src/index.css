@@ -212,14 +212,15 @@ h1, h2, h3 {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
 }
-.animate-fade-in { animation: enter 0.35s var(--ease-settle) both; }
+/* backwards: sin transformación residual al terminar (rompería position: fixed en los hijos) */
+.animate-fade-in { animation: enter 0.35s var(--ease-settle) backwards; }
 
 /* Ficha de determinación que se asienta sobre la etiqueta */
 @keyframes slip-settle {
   from { opacity: 0; transform: translateY(-14px) rotate(-1.2deg); }
   to { opacity: 1; transform: none; }
 }
-.slip-enter { animation: slip-settle 0.55s var(--ease-settle) both; }
+.slip-enter { animation: slip-settle 0.55s var(--ease-settle) backwards; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 

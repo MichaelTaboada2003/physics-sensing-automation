@@ -4,19 +4,12 @@ import type { ClassifierMetrics as Metrics, StreamLine, ThresholdPreviewResponse
 import ClassifierMetrics from './ClassifierMetrics';
 import { useProgressStream } from '../hooks/useProgressStream';
 import TaskProgress from './TaskProgress';
+import { DEFAULT_THRESHOLDS } from '../lib/classifier';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const API_BASE = '';
 
-const DEFAULT_THRESHOLDS = {
-  ndvi_veg_min:    0.60,
-  bsi_veg_max:    -0.10,
-  ndwi_water_min:  0.10,
-  ndvi_water_max:  0.10,
-  bsi_mining_min:  0.12,
-  ndvi_mining_max: 0.25,
-};
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 

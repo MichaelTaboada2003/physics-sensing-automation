@@ -139,6 +139,8 @@ export interface SeriesPoint {
   stats: Record<ClassKey, ClassStat>;
   ndvi_mean: number | null;
   clear_percent: number;
+  /** % de píxeles realmente clasificados (sin nubes ni huecos de datos). */
+  valid_percent: number;
 }
 
 export interface TimeSeries {
@@ -147,6 +149,7 @@ export interface TimeSeries {
   ndvi_trend: Trend | null;
   total_hectares: number;
   years_used_for_trend: number[];
+  min_valid_percent: number;
   failed: { year: number; error: string }[];
 }
 

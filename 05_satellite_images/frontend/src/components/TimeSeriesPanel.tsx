@@ -99,14 +99,18 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
     );
   };
 
-  const data = series?.points.map(p => ({
-    year: p.year,
-    vegetation: p.stats.vegetation.percent_clear,
-    water: p.stats.water.percent_clear,
-    mining: p.stats.mining.percent_clear,
-    ndvi: p.ndvi_mean,
-    clear: p.clear_percent,
-  })) ?? [];
+  // Años excluidos de la tendencia: hueco en los gráficos
+  const used = new Set(series?.years_used_for_trend ?? []);
+  const data = series?.points.map(p => {
+    const ok = used.has(p.year);
+    return {
+      year: p.year,
+      vegetation: ok ? p.stats.vegetation.percent_clear : null,
+      water: ok ? p.stats.water.percent_clear : null,
+      mining: ok ? p.stats.mining.percent_clear : null,
+      ndvi: ok ? p.ndvi_mean : null,
+    };
+  }) ?? [];
 
   const veg = series?.trends.vegetation;
   const span = series ? `${series.points[0]?.year}–${series.points[series.points.length - 1]?.year}` : '';
@@ -231,7 +235,7 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
                     strokeWidth={2}
                     dot={{ r: 4, strokeWidth: 2, stroke: DOT_RING, fill: CLASS_CHART_COLORS[k] }}
                     activeDot={{ r: 6, strokeWidth: 2, stroke: DOT_RING }}
-                    connectNulls
+                    connectNulls={false}
                     isAnimationActive={false}
                   />
                 ))}
@@ -260,7 +264,7 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
                   strokeWidth={2}
                   dot={{ r: 4, strokeWidth: 2, stroke: DOT_RING, fill: CLASS_CHART_COLORS.vegetation }}
                   activeDot={{ r: 6, strokeWidth: 2, stroke: DOT_RING }}
-                  connectNulls
+                  connectNulls={false}
                   isAnimationActive={false}
                 />
               </LineChart>
@@ -274,7 +278,7 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
                 <tr>
                   <th scope="col">Año</th>
                   <th scope="col">Escena</th>
-                  <th scope="col" className="!text-right">Despejado</th>
+                  <th scope="col" className="!text-right">Clasificado</th>
                   {CLASS_KEYS.map(k => (
                     <th key={k} scope="col" className="!text-right">{CLASS_CHART_LABELS[k]}</th>
                   ))}
@@ -284,13 +288,13 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
               </thead>
               <tbody>
                 {series.points.map(p => {
-                  const lowClear = p.clear_percent < 50;
+                  const lowClear = p.valid_percent < series.min_valid_percent;
                   return (
                     <tr key={p.year}>
                       <td className="figure font-bold">{p.year}</td>
                       <td className="figure text-ink-2">{p.scene.datetime.slice(0, 10)}</td>
-                      <td className={`num ${lowClear ? 'text-soil font-bold' : ''}`} title={lowClear ? 'Menos del 50 % despejado: excluido de la tendencia' : undefined}>
-                        {fmt(p.clear_percent, 0)} %
+                      <td className={`num ${lowClear ? 'text-soil font-bold' : ''}`} title={lowClear ? 'Menos del 50 % clasificado: excluido de la tendencia' : undefined}>
+                        {fmt(p.valid_percent, 0)} %
                       </td>
                       {CLASS_KEYS.map(k => (
                         <td key={k} className="num">{fmt(p.stats[k].percent_clear, 1)} %</td>
@@ -315,7 +319,7 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
                 </p>
               ))}
               <p className="text-muted">
-                Tendencias con <span className="figure">{series.years_used_for_trend.length}</span> años (≥ 50 % de la zona despejada).
+                Tendencias con <span className="figure">{series.years_used_for_trend.length}</span> años (≥ 50 % de la zona clasificada; los demás no cuentan).
                 Superficie analizada: <span className="figure">{fmt(series.total_hectares, 0)}</span> ha.
               </p>
             </div>
