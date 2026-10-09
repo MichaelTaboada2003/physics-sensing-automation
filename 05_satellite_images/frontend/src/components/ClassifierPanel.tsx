@@ -12,7 +12,8 @@ import {
   Mountain,
   ChevronRight,
 } from 'lucide-react';
-import type { StreamLine, ThresholdPreviewResponse } from '../types';
+import type { ClassifierMetrics as Metrics, StreamLine, ThresholdPreviewResponse } from '../types';
+import ClassifierMetrics from './ClassifierMetrics';
 import { useProgressStream } from '../hooks/useProgressStream';
 import ProgressBar from './ProgressBar';
 import LogConsole from './LogConsole';
@@ -103,6 +104,7 @@ export default function ClassifierPanel({ sessionId, onComplete }: ClassifierPan
   const [trainLogs, setTrainLogs] = useState<StreamLine[]>([]);
   const [trainError, setTrainError] = useState<string | null>(null);
   const [oobScore, setOobScore] = useState<number | null>(null);
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
 
   // ── Predict state ─────────────────────────────────────────────────────────────
   const [predictStatus, setPredictStatus] = useState<StepStatus>('idle');
@@ -198,6 +200,7 @@ export default function ClassifierPanel({ sessionId, onComplete }: ClassifierPan
     setTrainLogs([]);
     setTrainError(null);
     setOobScore(null);
+    setMetrics(null);
 
     await consume(
       `${API_BASE}/train`,
@@ -210,16 +213,15 @@ export default function ClassifierPanel({ sessionId, onComplete }: ClassifierPan
       },
       // onDone
       (line) => {
-        appendTrainLog(line);
         setTrainProgress(1);
         setTrainStatus('done');
         if (line.oob_score !== undefined) {
           setOobScore(line.oob_score);
         }
+        if (line.metrics) setMetrics(line.metrics);
       },
       // onError
       (line) => {
-        appendTrainLog(line);
         setTrainStatus('error');
         setTrainError(line.error ?? line.message);
       },
@@ -248,15 +250,13 @@ export default function ClassifierPanel({ sessionId, onComplete }: ClassifierPan
         setPredictProgress(line.progress);
       },
       // onDone
-      (line) => {
-        appendPredictLog(line);
+      () => {
         setPredictProgress(1);
         setPredictStatus('done');
         onComplete();
       },
       // onError
       (line) => {
-        appendPredictLog(line);
         setPredictStatus('error');
         setPredictError(line.error ?? line.message);
       },
@@ -424,6 +424,16 @@ export default function ClassifierPanel({ sessionId, onComplete }: ClassifierPan
                 </p>
               </div>
             </div>
+            {previewResult.ambiguous > 0 && (
+              <p className="flex items-start gap-2 mt-3 text-xs text-zinc-400">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-amber-400" />
+                <span>
+                  <b className="font-mono text-zinc-200">{previewResult.ambiguous.toLocaleString()}</b> píxeles
+                  cumplen más de una regla (p. ej. ríos con sedimento: agua y suelo a la vez) y se descartan del
+                  entrenamiento por ambiguos.
+                </span>
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -440,7 +450,7 @@ export default function ClassifierPanel({ sessionId, onComplete }: ClassifierPan
           </div>
           <div>
             <h3 className="text-sm font-bold text-zinc-200">Paso 2 — Entrenar modelo</h3>
-            <p className="text-xs text-zinc-500">Random Forest · 100 estimadores · validación out-of-bag</p>
+            <p className="text-xs text-zinc-500">Random Forest · 150 árboles · 16 variables · validación hold-out + OOB</p>
           </div>
         </div>
 
@@ -487,7 +497,9 @@ export default function ClassifierPanel({ sessionId, onComplete }: ClassifierPan
               </div>
             )}
 
-            {trainStatus === 'done' && oobScore !== null && (
+            {trainStatus === 'done' && metrics && <ClassifierMetrics metrics={metrics} />}
+
+            {trainStatus === 'done' && !metrics && oobScore !== null && (
               <div className="flex items-center gap-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl px-4 py-3 animate-fade-in">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                 <div>

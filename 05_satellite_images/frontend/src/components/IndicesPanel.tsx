@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BarChart2, Leaf, Mountain, Droplets, ChevronRight, AlertCircle, Loader2 } from 'lucide-react';
+import { BarChart2, Leaf, Mountain, Droplets, Waves, Building2, Sprout, Trees, ChevronRight, AlertCircle, Loader2 } from 'lucide-react';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -7,7 +7,7 @@ const API_BASE = '';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type IndexName = 'ndvi' | 'bsi' | 'ndwi';
+type IndexName = 'ndvi' | 'bsi' | 'ndwi' | 'mndwi' | 'ndbi' | 'evi' | 'savi';
 
 interface IndicesPanelProps {
   sessionId: string;
@@ -56,6 +56,46 @@ const INDICES: {
     bgColor: 'bg-blue-500/10',
     borderColor: 'border-blue-500/20',
     activeClass: 'bg-blue-600 text-white shadow-blue-600/20',
+  },
+  {
+    name: 'mndwi',
+    label: 'MNDWI',
+    description: 'NDWI modificado (verde vs SWIR): agua sin confundir con suelo urbano',
+    icon: Waves,
+    color: 'text-sky-400',
+    bgColor: 'bg-sky-500/10',
+    borderColor: 'border-sky-500/20',
+    activeClass: 'bg-sky-600 text-white shadow-sky-600/20',
+  },
+  {
+    name: 'ndbi',
+    label: 'NDBI',
+    description: 'Índice de Áreas Construidas (SWIR vs NIR)',
+    icon: Building2,
+    color: 'text-orange-400',
+    bgColor: 'bg-orange-500/10',
+    borderColor: 'border-orange-500/20',
+    activeClass: 'bg-orange-600 text-white shadow-orange-600/20',
+  },
+  {
+    name: 'evi',
+    label: 'EVI',
+    description: 'Índice de Vegetación Mejorado: no se satura en bosque denso',
+    icon: Trees,
+    color: 'text-lime-400',
+    bgColor: 'bg-lime-500/10',
+    borderColor: 'border-lime-500/20',
+    activeClass: 'bg-lime-600 text-white shadow-lime-600/20',
+  },
+  {
+    name: 'savi',
+    label: 'SAVI',
+    description: 'Índice de Vegetación Ajustado al Suelo (L = 0.5)',
+    icon: Sprout,
+    color: 'text-teal-400',
+    bgColor: 'bg-teal-500/10',
+    borderColor: 'border-teal-500/20',
+    activeClass: 'bg-teal-600 text-white shadow-teal-600/20',
   },
 ];
 
@@ -107,7 +147,7 @@ export default function IndicesPanel({ sessionId, sceneInfo, onComplete }: Indic
       {/* ── Index selector buttons ── */}
       <div className="bg-zinc-900/40 rounded-2xl border border-white/5 p-6">
         <h3 className="text-sm font-bold text-zinc-300 mb-4">Seleccionar índice espectral</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {INDICES.map(idx => {
             const Icon = idx.icon;
             const isActive = activeIndex === idx.name;

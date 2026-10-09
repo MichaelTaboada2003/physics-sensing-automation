@@ -27,6 +27,7 @@ export default function BandsPanel({ sessionId, sceneInfo, onComplete }: BandsPa
   const [logs, setLogs] = useState<StreamLine[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [previewKey, setPreviewKey] = useState(0); // force img reload
+  const [cloudFraction, setCloudFraction] = useState<number | null>(null);
 
   const { consume } = useProgressStream();
 
@@ -51,15 +52,13 @@ export default function BandsPanel({ sessionId, sceneInfo, onComplete }: BandsPa
       },
       // onDone
       (line) => {
-        appendLog(line);
         setProgress(1);
         setStatus('done');
         setPreviewKey(k => k + 1);
-        onComplete();
+        if (line.cloud_fraction !== undefined) setCloudFraction(line.cloud_fraction);
       },
       // onError
       (line) => {
-        appendLog(line);
         setStatus('error');
         setErrorMsg(line.error ?? line.message);
       },
@@ -86,7 +85,7 @@ export default function BandsPanel({ sessionId, sceneInfo, onComplete }: BandsPa
           </div>
           <div>
             <h3 className="text-sm font-bold text-zinc-200">Escena seleccionada</h3>
-            <p className="text-xs text-zinc-500">Sentinel-2 L2A — Bandas B02, B03, B04, B08, B11</p>
+            <p className="text-xs text-zinc-500">Sentinel-2 L2A — 9 bandas (B02–B07, B08, B11, B12) + máscara de nubes SCL</p>
           </div>
         </div>
 
@@ -185,7 +184,7 @@ export default function BandsPanel({ sessionId, sceneInfo, onComplete }: BandsPa
             </div>
             <div>
               <h3 className="text-sm font-bold text-zinc-200">Vista en color real</h3>
-              <p className="text-xs text-zinc-500">Bandas B04/B03/B02 normalizadas por percentiles (2–98)</p>
+              <p className="text-xs text-zinc-500">Reflectancia B04/B03/B02 normalizada por percentiles (2–98)</p>
             </div>
           </div>
 
@@ -213,8 +212,11 @@ export default function BandsPanel({ sessionId, sceneInfo, onComplete }: BandsPa
               <p className="text-sm font-mono text-zinc-200">{sceneInfo.datetime.slice(0, 10)}</p>
             </div>
             <div className="bg-black/30 rounded-xl p-3">
-              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Nubes</p>
-              <p className="text-sm font-mono text-emerald-400 font-bold">{sceneInfo.cloudCover.toFixed(1)} %</p>
+              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Nubes en tu zona (SCL)</p>
+              <p className="text-sm font-mono text-emerald-400 font-bold">
+                {cloudFraction === null ? '—' : `${(cloudFraction * 100).toFixed(1)} %`}
+                <span className="text-zinc-500 font-normal text-xs"> · tile {sceneInfo.cloudCover.toFixed(0)} %</span>
+              </p>
             </div>
           </div>
 
