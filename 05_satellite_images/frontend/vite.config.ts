@@ -14,6 +14,12 @@ export default defineConfig({
       '/train': 'http://localhost:8004',
       '/predict': 'http://localhost:8004',
       '/map': 'http://localhost:8004',
+      '/compare': 'http://localhost:8004',
+      '/timeseries': 'http://localhost:8004',
+      '/layer': 'http://localhost:8004',
+      '/scenes': 'http://localhost:8004',
+      '/export': 'http://localhost:8004',
+      '/region': 'http://localhost:8004',
     },
   },
 })

@@ -100,3 +100,24 @@ body {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 4px;
 }
+
+/* ── Leaflet (tema oscuro) ─────────────────────────────────────────────────── */
+.leaflet-container {
+  background: #18181b;
+  font-family: 'Outfit', sans-serif;
+}
+.leaflet-control-zoom a,
+.leaflet-control-layers {
+  background: rgba(24, 24, 27, 0.9) !important;
+  color: #e4e4e7 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+.leaflet-control-layers-expanded { color: #e4e4e7; }
+.leaflet-control-attribution {
+  background: rgba(9, 9, 11, 0.7) !important;
+  color: #a1a1aa !important;
+  font-size: 10px;
+}
+.leaflet-control-attribution a { color: #d4d4d8 !important; }
+.leaflet-container.aoi-drawing { cursor: crosshair; }
+.leaflet-image-layer.pixelated { image-rendering: pixelated; }
