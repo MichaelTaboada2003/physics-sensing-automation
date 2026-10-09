@@ -4,25 +4,14 @@ import { useLayerBounds } from '../hooks/useLayerBounds';
 import SwipeMap from './map/SwipeMap';
 import LayerControls from './map/LayerControls';
 import TimeSeriesPanel from './TimeSeriesPanel';
-import {
-  History,
-  Play,
-  AlertCircle,
-  CheckCircle2,
-  Loader2,
-  Calendar,
-  Cloud,
-  ArrowRight,
-  Info,
-  Download,
-  FileText,
-  CalendarRange,
-  LineChart as LineChartIcon,
-} from 'lucide-react';
-import type { StreamLine, ComparisonSummary, ClassKey } from '../types';
+import { Play, Loader2, Download, FileText, CalendarRange, LineChart as LineChartIcon } from 'lucide-react';
+import type { StreamLine, ComparisonSummary, ClassKey, Zone } from '../types';
 import { useProgressStream } from '../hooks/useProgressStream';
-import ProgressBar from './ProgressBar';
-import LogConsole from './LogConsole';
+import { useMapStats } from '../hooks/useMapStats';
+import TaskProgress from './TaskProgress';
+import MapLegend from './MapLegend';
+import SpecimenLabel from './SpecimenLabel';
+import type { DeterminationSlip } from './SpecimenLabel';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -30,16 +19,21 @@ const API_BASE = '';
 const MAX_YEARS_BACK = 10;
 
 const CLASS_ROWS: { key: ClassKey; label: string; color: string }[] = [
-  { key: 'vegetation',   label: 'Vegetación',           color: 'bg-green-600' },
-  { key: 'water',        label: 'Agua',                 color: 'bg-blue-600'  },
-  { key: 'mining',       label: 'Minería / Suelo exp.', color: 'bg-amber-800' },
-  { key: 'unclassified', label: 'Sin datos / nube',     color: 'bg-zinc-900'  },
+  { key: 'vegetation',   label: 'Vegetación',       color: 'bg-veg'   },
+  { key: 'water',        label: 'Agua',             color: 'bg-water' },
+  { key: 'mining',       label: 'Suelo / minería',  color: 'bg-soil'  },
+  { key: 'unclassified', label: 'Sin datos / nube', color: 'bg-ink'   },
 ];
 
 type Tab = 'year' | 'series';
 
-// Índices en la matriz de transiciones (orden del backend)
-const T = { veg: 0, water: 1, mining: 2 } as const;
+// Índices en la matriz de transiciones (orden del backend: veg, agua, minería, sin datos)
+const TRANSITIONS: { label: string; from: number; to: number }[] = [
+  { label: 'Vegetación → suelo / minería', from: 0, to: 2 },
+  { label: 'Vegetación → agua', from: 0, to: 1 },
+  { label: 'Suelo / minería → vegetación', from: 2, to: 0 },
+  { label: 'Agua → vegetación', from: 1, to: 0 },
+];
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -48,21 +42,20 @@ type CompareStatus = 'idle' | 'running' | 'done' | 'error';
 interface ComparePanelProps {
   sessionId: string;
   sceneYear: number;
+  zone: Zone | null;
+  sceneInfo: { id: string; datetime: string } | null;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-const fmtHa = (n: number) => n.toLocaleString('es-ES', { maximumFractionDigits: 1 });
+const fmtHa = (n: number) => n.toLocaleString('es-CO', { maximumFractionDigits: 1 });
 
 const signed = (n: number, digits = 1) =>
-  `${n > 0 ? '+' : ''}${n.toLocaleString('es-ES', { maximumFractionDigits: digits })}`;
-
-const deltaColor = (n: number) =>
-  n > 0 ? 'text-emerald-400' : n < 0 ? 'text-red-400' : 'text-zinc-500';
+  `${n > 0 ? '+' : ''}${n.toLocaleString('es-CO', { maximumFractionDigits: digits })}`;
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function ComparePanel({ sessionId, sceneYear }: ComparePanelProps) {
+export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo }: ComparePanelProps) {
   const years = Array.from({ length: MAX_YEARS_BACK }, (_, i) => sceneYear - 1 - i);
 
   const [selectedYear, setSelectedYear] = useState<number>(sceneYear - 5);
@@ -77,6 +70,7 @@ export default function ComparePanel({ sessionId, sceneYear }: ComparePanelProps
   const [layerKind, setLayerKind] = useState<LayerKind>('rgb');
   const [opacity, setOpacity] = useState(1);
   const { bounds } = useLayerBounds(sessionId);
+  const stats = useMapStats(sessionId, 'compare');
 
   const { consume } = useProgressStream();
 
@@ -139,312 +133,286 @@ export default function ComparePanel({ sessionId, sceneYear }: ComparePanelProps
   const active = activeYear !== null ? results[activeYear] : null;
   const computedYears = Object.keys(results).map(Number).sort((a, b) => b - a);
 
+  // Fichas de determinación para la etiqueta: serie (si existe) + comparativas sueltas
+  const slipsByYear = new Map<number, DeterminationSlip>();
+  for (const [y, r] of Object.entries(results)) {
+    slipsByYear.set(Number(y), {
+      year: Number(y),
+      date: r.past_scene.datetime.slice(0, 10),
+      vegetation: r.past.vegetation.percent_clear,
+      water: r.past.water.percent_clear,
+      mining: r.past.mining.percent_clear,
+    });
+  }
+  for (const p of series?.points ?? []) {
+    if (p.year === sceneYear) continue;
+    slipsByYear.set(p.year, {
+      year: p.year,
+      date: p.scene.datetime.slice(0, 10),
+      vegetation: p.stats.vegetation.percent_clear,
+      water: p.stats.water.percent_clear,
+      mining: p.stats.mining.percent_clear,
+    });
+  }
+  const slips = [...slipsByYear.values()];
+  const currentPoint = series?.points.find(p => p.year === sceneYear);
+
+  const label = zone && (
+    <SpecimenLabel
+      zone={zone}
+      scene={sceneInfo}
+      cloudFraction={stats?.cloud_fraction}
+      classes={stats?.classes ?? currentPoint?.stats}
+      slips={slips}
+      vegetationTrend={series?.trends.vegetation}
+    />
+  );
+
+  const vegPast = active?.past.vegetation.hectares ?? 0;
+  const vegNow = active?.current.vegetation.hectares ?? 0;
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="w-full max-w-4xl mx-auto animate-fade-in space-y-6">
-
-      {/* ── Tabs ── */}
-      <div className="flex gap-1.5 bg-zinc-900/40 p-1.5 rounded-2xl border border-white/5">
+    <div className="space-y-6">
+      <div className="segmented" role="tablist" aria-label="Tipo de comparación">
         {([
           { id: 'year' as Tab, label: 'Comparar un año', icon: CalendarRange },
           { id: 'series' as Tab, label: 'Serie de 10 años', icon: LineChartIcon },
         ]).map(t => (
           <button
             key={t.id}
+            role="tab"
+            aria-selected={tab === t.id}
             onClick={() => setTab(t.id)}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-colors ${
-              tab === t.id ? 'bg-orange-600 text-white' : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
-            }`}
+            className="inline-flex items-center gap-2"
           >
-            <t.icon className="w-4 h-4" />
+            <t.icon className="w-4 h-4" aria-hidden />
             {t.label}
           </button>
         ))}
       </div>
 
       {tab === 'series' && (
-        <TimeSeriesPanel
-          sessionId={sessionId}
-          sceneYear={sceneYear}
-          series={series}
-          onSeries={setSeries}
-          onSelectYear={showYear}
-        />
-      )}
-
-      {tab === 'year' && (<>
-      {/* ── Year selector ── */}
-      <div className="bg-zinc-900/40 rounded-2xl border border-white/5 p-6 space-y-5">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-orange-500/10 rounded-lg border border-orange-500/20">
-            <History className="w-4 h-4 text-orange-400" />
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px] items-start">
+          <div className="min-w-0">
+            <TimeSeriesPanel
+              sessionId={sessionId}
+              sceneYear={sceneYear}
+              series={series}
+              onSeries={setSeries}
+              onSelectYear={showYear}
+            />
           </div>
-          <div>
-            <h3 className="text-sm font-bold text-zinc-200">Año a comparar con {sceneYear}</h3>
-            <p className="text-xs text-zinc-500">
-              Misma temporada (±60 días), escena con menos nubes en la zona, clasificada con el modelo actual
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
-          {years.map(y => (
-            <button
-              key={y}
-              onClick={() => (processedYears.has(y) ? showYear(y) : setSelectedYear(y))}
-              disabled={status === 'running'}
-              className={`relative py-2 rounded-xl text-sm font-mono font-bold border transition-all ${
-                selectedYear === y
-                  ? 'bg-orange-500 text-white border-orange-400 shadow-lg shadow-orange-500/20'
-                  : 'bg-black/30 text-zinc-400 border-white/5 hover:text-zinc-200 hover:bg-white/5'
-              } disabled:opacity-50`}
-            >
-              {y}
-              {processedYears.has(y) && (
-                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 border border-zinc-900" />
-              )}
-            </button>
-          ))}
-        </div>
-
-        {years.some(y => y < 2017) && (
-          <div className="flex items-start gap-2 text-xs text-zinc-500">
-            <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-            <span>
-              Sentinel-2 L2A tiene cobertura irregular antes de 2017; algunos años antiguos pueden no
-              tener escenas disponibles.
-            </span>
-          </div>
-        )}
-
-        <button
-          onClick={handleCompare}
-          disabled={status === 'running'}
-          className="w-full py-4 rounded-2xl font-bold text-base transition-all shadow-lg flex items-center justify-center gap-3 bg-orange-600 hover:bg-orange-500 text-white shadow-orange-600/20 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          {status === 'running' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5" />}
-          {status === 'running' ? 'Comparando…' : `Comparar ${selectedYear} vs ${sceneYear}`}
-        </button>
-      </div>
-
-      {/* ── Progress ── */}
-      {status !== 'idle' && (
-        <div className="space-y-4">
-          <div className="bg-zinc-900/40 rounded-2xl border border-white/5 p-6">
-            <div className="flex items-center gap-3 mb-4">
-              {status === 'running' && <Loader2 className="w-4 h-4 text-orange-400 animate-spin" />}
-              {status === 'done' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-              {status === 'error' && <AlertCircle className="w-4 h-4 text-red-400" />}
-              <span className="text-sm font-bold text-zinc-300">
-                {status === 'running' && 'Procesando escena histórica…'}
-                {status === 'done' && 'Comparativa completada'}
-                {status === 'error' && 'Error en la comparativa'}
-              </span>
-            </div>
-            <ProgressBar progress={progress} label={status === 'running' ? 'Progreso' : undefined} />
-          </div>
-
-          {status === 'error' && errorMsg && (
-            <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
-              <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-400 font-medium">{errorMsg}</p>
-            </div>
-          )}
-
-          <LogConsole lines={logs} />
+          {label && <div className="xl:sticky xl:top-8">{label}</div>}
         </div>
       )}
 
-      {/* ── Results ── */}
-      {active && (
-        <div className="space-y-6 animate-fade-in">
-
-          {/* Year tabs (when several comparisons exist) */}
-          {computedYears.length > 1 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mr-1">
-                Comparativas
-              </span>
-              {computedYears.map(y => (
+      {tab === 'year' && (
+        <>
+          <section className="sheet p-4 space-y-3" aria-labelledby="year-title">
+            <div>
+              <h2 id="year-title" className="font-serif text-xl font-semibold">Año a comparar con {sceneYear}</h2>
+              <p className="text-sm text-ink-2 mt-1">
+                Misma temporada (±60 días), la escena con menos nubes en la zona, clasificada con el mismo modelo.
+              </p>
+            </div>
+            <div className="segmented flex-wrap" role="group" aria-label="Año">
+              {years.map(y => (
                 <button
                   key={y}
-                  onClick={() => setActiveYear(y)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition-colors ${
-                    activeYear === y
-                      ? 'bg-zinc-200 text-zinc-900 border-zinc-200'
-                      : 'bg-black/30 text-zinc-400 border-white/5 hover:text-zinc-200'
-                  }`}
+                  type="button"
+                  aria-pressed={selectedYear === y}
+                  onClick={() => (processedYears.has(y) ? showYear(y) : setSelectedYear(y))}
+                  disabled={status === 'running'}
+                  className="figure relative"
                 >
-                  {y} → {sceneYear}
+                  {y}
+                  {processedYears.has(y) && (
+                    <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-stamp" aria-label="calculado" />
+                  )}
                 </button>
               ))}
             </div>
-          )}
-
-          {/* Scene metadata */}
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-3">
-            {[active.past_scene, active.current_scene].map((scene, i) => (
-              <div key={scene.id} className={`bg-black/30 rounded-xl p-4 border border-white/5 ${i === 1 ? 'sm:order-3' : ''}`}>
-                <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
-                  {i === 0 ? 'Escena histórica' : 'Escena actual'}
-                </p>
-                <div className="flex items-center gap-4 text-sm font-mono">
-                  <span className="flex items-center gap-1.5 text-zinc-200">
-                    <Calendar className="w-3.5 h-3.5 text-zinc-600" />
-                    {scene.datetime.slice(0, 10)}
-                  </span>
-                  <span className="flex items-center gap-1.5 text-blue-400">
-                    <Cloud className="w-3.5 h-3.5 text-zinc-600" />
-                    {scene.local_cloud != null
-                      ? `${scene.local_cloud.toFixed(1)} % en la zona`
-                      : `${scene.cloud_cover.toFixed(1)} %`}
-                  </span>
-                </div>
-                <p className="text-[10px] font-mono text-zinc-600 break-all mt-2">{scene.id}</p>
-              </div>
-            ))}
-            <ArrowRight className="w-5 h-5 text-zinc-600 mx-auto hidden sm:block sm:order-2" />
-          </div>
-
-          {/* Interactive before/after map */}
-          {bounds && (
-            <div className="bg-zinc-900/40 rounded-2xl border border-white/5 p-4 space-y-3">
-              <LayerControls
-                kinds={['rgb', 'class', 'ndvi', 'change']}
-                kind={layerKind}
-                onKind={setLayerKind}
-                opacity={opacity}
-                onOpacity={setOpacity}
-              />
-              {layerKind === 'change' ? (
-                <SwipeMap
-                  bounds={bounds}
-                  after={{
-                    url: `${API_BASE}/layer?session_id=${sessionId}&kind=change&year=${active.year}`,
-                    label: `Cambios ${active.year} → ${sceneYear}`,
-                  }}
-                  opacity={opacity}
-                />
-              ) : (
-                <SwipeMap
-                  bounds={bounds}
-                  before={{
-                    url: `${API_BASE}/layer?session_id=${sessionId}&kind=${layerKind}&year=${active.year}`,
-                    label: String(active.year),
-                  }}
-                  after={{
-                    url: `${API_BASE}/layer?session_id=${sessionId}&kind=${layerKind}`,
-                    label: String(sceneYear),
-                  }}
-                  opacity={opacity}
-                />
+            <div className="flex flex-wrap items-center gap-3">
+              <button onClick={handleCompare} disabled={status === 'running'} className="btn btn-primary">
+                {status === 'running' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                Comparar <span className="figure">{selectedYear}</span> con <span className="figure">{sceneYear}</span>
+              </button>
+              {years.some(y => y < 2017) && (
+                <p className="text-sm text-muted">Antes de 2017 hay pocas imágenes Sentinel-2 disponibles.</p>
               )}
-              <p className="text-xs text-zinc-500">
-                {layerKind === 'change'
-                  ? 'Rojo: pérdida de vegetación · verde: ganancia · ámbar: nuevo suelo expuesto · violeta: otro cambio.'
-                  : 'Arrastra el divisor para comparar ambos años sobre la imagen satelital.'}
-              </p>
+            </div>
+          </section>
+
+          <TaskProgress
+            status={status}
+            progress={progress}
+            lines={logs}
+            error={errorMsg}
+            titles={{
+              running: `Procesando ${selectedYear}…`,
+              done: 'Comparativa lista',
+              error: `No se pudo comparar ${selectedYear}`,
+            }}
+          />
+
+          {active && (
+            <div className="space-y-6 animate-fade-in">
+              {computedYears.length > 1 && (
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="text-ink-2">Comparativas calculadas:</span>
+                  {computedYears.map(y => (
+                    <button
+                      key={y}
+                      onClick={() => setActiveYear(y)}
+                      aria-pressed={activeYear === y}
+                      className={`figure px-2 py-1 rounded-[3px] border ${
+                        activeYear === y ? 'border-stamp bg-stamp-tint text-stamp-2 font-bold' : 'border-rule hover:border-rule-strong'
+                      }`}
+                    >
+                      {y}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <section className="sheet overflow-hidden" aria-label="Mapa antes y después">
+                <div className="p-3 border-b border-rule bg-paper-2 space-y-2.5">
+                  <LayerControls
+                    kinds={['rgb', 'class', 'ndvi', 'change']}
+                    kind={layerKind}
+                    onKind={setLayerKind}
+                    opacity={opacity}
+                    onOpacity={setOpacity}
+                  />
+                  <MapLegend kind={layerKind} />
+                </div>
+                {bounds && (
+                  layerKind === 'change' ? (
+                    <SwipeMap
+                      bounds={bounds}
+                      after={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=change&year=${active.year}`, label: 'Cambios' }}
+                      opacity={opacity}
+                      height="h-[440px] lg:h-[600px]"
+                    >
+                      {label && <div className="hidden sm:block">{label}</div>}
+                    </SwipeMap>
+                  ) : (
+                    <SwipeMap
+                      bounds={bounds}
+                      before={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=${layerKind}&year=${active.year}`, label: String(active.year) }}
+                      after={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=${layerKind}`, label: String(sceneYear) }}
+                      opacity={opacity}
+                      height="h-[440px] lg:h-[600px]"
+                    >
+                      {label && <div className="hidden sm:block">{label}</div>}
+                    </SwipeMap>
+                  )
+                )}
+                <p className="px-4 py-2.5 border-t border-rule text-sm text-ink-2">
+                  {layerKind === 'change'
+                    ? 'Solo se pintan los píxeles que cambiaron de clase; las nubes no cuentan como cambio.'
+                    : <>Arrastra el divisor: a la izquierda <span className="figure">{active.year}</span>, a la derecha <span className="figure">{sceneYear}</span>.</>}
+                </p>
+              </section>
+
+              {label && <div className="sm:hidden">{label}</div>}
+
+              <section className="space-y-3" aria-labelledby="what-title">
+                <h2 id="what-title" className="font-serif text-xl font-semibold">
+                  Qué cambió entre <span className="figure">{active.year}</span> y <span className="figure">{sceneYear}</span>
+                </h2>
+                <p className="max-w-[70ch] text-ink-2">
+                  La vegetación pasó de <span className="figure text-ink font-bold">{fmtHa(vegPast)} ha</span> a{' '}
+                  <span className="figure text-ink font-bold">{fmtHa(vegNow)} ha</span>{' '}
+                  (<span className={`figure font-bold ${vegNow < vegPast ? 'text-signal' : 'text-ink'}`}>{signed(vegNow - vegPast)} ha</span>).
+                  El <span className="figure text-ink font-bold">{active.changed_percent.toLocaleString('es-CO', { maximumFractionDigits: 1 })} %</span> de
+                  los píxeles comparables cambió de clase. Una sola comparación no basta para hablar de tendencia: usa la serie de 10 años.
+                </p>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="sheet overflow-x-auto">
+                    <table className="data-table">
+                      <caption className="sr-only">Superficie por clase en hectáreas</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Clase</th>
+                          <th scope="col" className="!text-right figure">{active.year}</th>
+                          <th scope="col" className="!text-right figure">{sceneYear}</th>
+                          <th scope="col" className="!text-right">Δ ha</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {CLASS_ROWS.map(({ key, label: name, color }) => {
+                          const d = active.current[key].hectares - active.past[key].hectares;
+                          return (
+                            <tr key={key}>
+                              <td>
+                                <span className="flex items-center gap-2">
+                                  <span className={`w-2.5 h-2.5 rounded-[2px] ${color}`} aria-hidden />
+                                  {name}
+                                </span>
+                              </td>
+                              <td className="num">{fmtHa(active.past[key].hectares)}</td>
+                              <td className="num">{fmtHa(active.current[key].hectares)}</td>
+                              <td className={`num font-bold ${key === 'vegetation' && d < 0 ? 'text-signal' : ''}`}>{signed(d)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="sheet overflow-x-auto">
+                    <table className="data-table">
+                      <caption className="sr-only">Transiciones principales</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Transición</th>
+                          <th scope="col" className="!text-right">Superficie</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {TRANSITIONS.map(t => (
+                          <tr key={t.label}>
+                            <td>{t.label}</td>
+                            <td className="num">
+                              {fmtHa(active.transitions[t.from][t.to] * active.pixel_area_m2 / 10_000)} ha
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+
+              <details className="sheet">
+                <summary className="cursor-pointer px-4 py-3 font-semibold">Figura comparativa completa</summary>
+                <img
+                  key={`${sessionId}-${active.year}`}
+                  src={`${API_BASE}/compare/image?session_id=${sessionId}&year=${active.year}`}
+                  alt={`Color real, ΔNDVI, clasificación y mapa de cambios ${active.year}–${sceneYear}`}
+                  loading="lazy"
+                  className="w-full h-auto border-t border-rule bg-white"
+                />
+              </details>
+
+              <div className="flex flex-wrap gap-3">
+                <a href={`${API_BASE}/export/changes.geojson?session_id=${sessionId}&year=${active.year}`} className="btn btn-secondary">
+                  <Download className="w-4 h-4" />
+                  Polígonos de cambio (GeoJSON)
+                </a>
+                <a href={`${API_BASE}/export/report.html?session_id=${sessionId}`} target="_blank" rel="noopener noreferrer" className="btn btn-secondary">
+                  <FileText className="w-4 h-4" />
+                  Reporte con todas las comparativas
+                </a>
+              </div>
             </div>
           )}
-
-          {/* Comparison figure */}
-          <div className="bg-zinc-900/40 rounded-2xl border border-white/5 p-4">
-            <img
-              key={`${sessionId}-${active.year}`}
-              src={`${API_BASE}/compare/image?session_id=${sessionId}&year=${active.year}`}
-              alt={`Comparativa temporal ${active.year} vs ${sceneYear}`}
-              className="w-full h-auto rounded-xl bg-white"
-            />
-          </div>
-
-          {/* Stats table */}
-          <div className="bg-zinc-900/40 rounded-2xl border border-white/5 p-6 overflow-x-auto">
-            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-4">
-              Superficie por clase (ha)
-            </p>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-[11px] text-zinc-500 uppercase tracking-wider">
-                  <th className="text-left font-bold pb-3">Clase</th>
-                  <th className="text-right font-bold pb-3">{active.year}</th>
-                  <th className="text-right font-bold pb-3">{sceneYear}</th>
-                  <th className="text-right font-bold pb-3">Δ ha</th>
-                  <th className="text-right font-bold pb-3">Δ pp</th>
-                </tr>
-              </thead>
-              <tbody className="font-mono">
-                {CLASS_ROWS.map(({ key, label, color }) => {
-                  const p = active.past[key];
-                  const c = active.current[key];
-                  const dHa = c.hectares - p.hectares;
-                  const dPct = c.percent - p.percent;
-                  return (
-                    <tr key={key} className="border-t border-white/5">
-                      <td className="py-2.5 font-sans">
-                        <span className="flex items-center gap-2 text-zinc-300">
-                          <span className={`w-3 h-3 rounded-sm ${color} border border-white/10`} />
-                          {label}
-                        </span>
-                      </td>
-                      <td className="text-right text-zinc-400">
-                        {fmtHa(p.hectares)} <span className="text-zinc-600 text-xs">({p.percent.toFixed(1)}%)</span>
-                      </td>
-                      <td className="text-right text-zinc-200">
-                        {fmtHa(c.hectares)} <span className="text-zinc-600 text-xs">({c.percent.toFixed(1)}%)</span>
-                      </td>
-                      <td className={`text-right font-bold ${deltaColor(dHa)}`}>{signed(dHa)}</td>
-                      <td className={`text-right ${deltaColor(dPct)}`}>{signed(dPct, 2)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Key transitions */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              { label: 'Píxeles con cambio', value: `${active.changed_percent.toFixed(1)} %` },
-              { label: 'Vegetación → Minería', value: `${fmtHa(active.transitions[T.veg][T.mining] * active.pixel_area_m2 / 10_000)} ha` },
-              { label: 'Vegetación → Agua',    value: `${fmtHa(active.transitions[T.veg][T.water] * active.pixel_area_m2 / 10_000)} ha` },
-              { label: 'Minería → Vegetación', value: `${fmtHa(active.transitions[T.mining][T.veg] * active.pixel_area_m2 / 10_000)} ha` },
-            ].map(({ label, value }) => (
-              <div key={label} className="bg-black/30 rounded-xl p-4 border border-white/5">
-                <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">{label}</p>
-                <p className="text-lg font-mono font-bold text-zinc-100">{value}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Downloads */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <a
-              href={`${API_BASE}/export/changes.geojson?session_id=${sessionId}&year=${active.year}`}
-              className="flex items-center justify-center gap-2 py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-sm rounded-xl border border-white/10 transition-all active:scale-[0.98]"
-            >
-              <Download className="w-4 h-4" />
-              Polígonos de cambio (GeoJSON)
-            </a>
-            <a
-              href={`${API_BASE}/export/report.html?session_id=${sessionId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 py-3 px-4 bg-zinc-100 hover:bg-white text-zinc-900 font-bold text-sm rounded-xl transition-all active:scale-[0.98]"
-            >
-              <FileText className="w-4 h-4" />
-              Reporte con todas las comparativas
-            </a>
-          </div>
-
-          <p className="text-xs text-zinc-600 leading-relaxed">
-            Ambas escenas se convierten a reflectancia de superficie (corrigiendo el offset del processing
-            baseline 04.00), se alinean sobre la misma grilla de 10 m y se clasifican con el mismo Random Forest.
-            Nubes, sombras y nieve (capa SCL) se excluyen: aparecen como "sin datos" y no cuentan como cambio.
-          </p>
-        </div>
+        </>
       )}
-      </>)}
     </div>
   );
 }

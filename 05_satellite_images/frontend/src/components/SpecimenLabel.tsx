@@ -162,7 +162,7 @@ export default function SpecimenLabel({
                 </span>
                 <span className="block text-xs mt-0.5">
                   {significant ? 'Tendencia significativa' : 'Sin tendencia significativa'} · Mann-Kendall p{' '}
-                  <span className="figure">{vegetationTrend.p_value < 0.001 ? '< 0.001' : `= ${vegetationTrend.p_value.toFixed(3)}`}</span>
+                  <span className="figure">{vegetationTrend.p_value < 0.001 ? '< 0,001' : `= ${vegetationTrend.p_value.toLocaleString('es-CO', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`}</span>
                 </span>
               </p>
             )}

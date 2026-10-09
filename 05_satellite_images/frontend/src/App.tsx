@@ -212,13 +212,21 @@ function App() {
           )}
 
           {state.step === 5 && state.sessionId && (
-            <MapPanel sessionId={state.sessionId} onReset={handleReset} onCompare={() => goTo(6)} />
+            <MapPanel
+              sessionId={state.sessionId}
+              zone={state.zone}
+              sceneInfo={state.sceneInfo}
+              onReset={handleReset}
+              onCompare={() => goTo(6)}
+            />
           )}
 
           {state.step === 6 && state.sessionId && state.sceneInfo && (
             <ComparePanel
               sessionId={state.sessionId}
               sceneYear={new Date(state.sceneInfo.datetime).getUTCFullYear()}
+              zone={state.zone}
+              sceneInfo={state.sceneInfo}
             />
           )}
           </div>

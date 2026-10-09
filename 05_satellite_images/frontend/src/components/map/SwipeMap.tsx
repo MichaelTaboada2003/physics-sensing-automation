@@ -83,7 +83,7 @@ export default function SwipeMap({ bounds, before, after, opacity, height = 'h-[
   const swipe = !!before;
 
   return (
-    <div ref={wrapRef} className={`relative ${height} rounded-xl overflow-hidden border border-white/10 select-none`}>
+    <div ref={wrapRef} className={`relative ${height} overflow-hidden select-none bg-paper-2`}>
       <MapContainer bounds={bounds} className="h-full w-full" scrollWheelZoom zoomSnap={0.25} zoomDelta={0.5}>
         <BaseLayers />
         <FitBounds bounds={bounds} />
@@ -99,22 +99,22 @@ export default function SwipeMap({ bounds, before, after, opacity, height = 'h-[
       {swipe && (
         <>
           {/* Etiquetas */}
-          <span className="absolute top-3 left-3 z-[1000] bg-zinc-950/85 border border-white/10 rounded-lg px-2.5 py-1 text-xs font-bold text-zinc-200 pointer-events-none">
+          <span className="figure absolute top-3 left-14 z-[1000] bg-paper border border-rule-strong rounded-[3px] px-2 py-0.5 text-sm font-bold shadow-[var(--shadow-sheet)] pointer-events-none">
             {before.label}
           </span>
-          <span className="absolute top-3 right-14 z-[1000] bg-zinc-950/85 border border-white/10 rounded-lg px-2.5 py-1 text-xs font-bold text-zinc-200 pointer-events-none">
+          <span className="figure absolute top-3 right-14 z-[1000] bg-paper border border-rule-strong rounded-[3px] px-2 py-0.5 text-sm font-bold shadow-[var(--shadow-sheet)] pointer-events-none">
             {after.label}
           </span>
 
           {/* Divisor arrastrable (fuera del contenedor de Leaflet para no mover el mapa) */}
           <div
-            className="absolute top-0 bottom-0 z-[1000] w-0.5 bg-white/90 shadow-[0_0_8px_rgba(0,0,0,0.6)] pointer-events-none"
+            className="absolute top-0 bottom-0 z-[1000] w-0.5 -translate-x-1/2 bg-paper shadow-[0_0_6px_rgb(27_36_48/0.6)] pointer-events-none"
             style={{ left: `${ratio * 100}%` }}
           />
           <button
             type="button"
             aria-label="Mover divisor antes/después"
-            className="absolute top-1/2 z-[1001] -translate-x-1/2 -translate-y-1/2 w-8 h-12 rounded-lg bg-white text-zinc-900 shadow-lg flex items-center justify-center cursor-ew-resize touch-none"
+            className="absolute top-1/2 z-[1001] -translate-x-1/2 -translate-y-1/2 w-9 h-12 rounded-[4px] bg-paper text-ink border border-rule-strong shadow-[var(--shadow-lift)] flex items-center justify-center cursor-ew-resize touch-none hover:bg-white"
             style={{ left: `${ratio * 100}%` }}
             onPointerDown={e => {
               dragging.current = true;
