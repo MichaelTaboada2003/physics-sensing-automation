@@ -157,19 +157,19 @@ export default function GuidedFlow({
         {/* Móvil: zonas en una fila desplazable y la acción, antes del mapa */}
         <div className="lg:hidden space-y-3 min-w-0">
           <p className="field-label">Elige un lugar o dibuja tu zona en el mapa</p>
-          <ul className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 snap-x" aria-label="Zonas de ejemplo">
+          <ul className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 scroll-px-4 snap-x" aria-label="Zonas de ejemplo">
             {PRESETS.map(p => (
               <li key={p.name} className="snap-start shrink-0">
                 <button
                   type="button"
                   aria-pressed={zoneName === p.name}
                   onClick={() => pick(p)}
-                  className={`text-left rounded-[5px] border px-3 py-2 w-48 ${
+                  className={`text-left rounded-[5px] border px-3 py-2 w-52 h-full ${
                     zoneName === p.name ? 'border-stamp bg-stamp-tint' : 'border-rule bg-paper'
                   }`}
                 >
                   <span className={`block text-sm font-semibold ${zoneName === p.name ? 'text-stamp-2' : ''}`}>{p.name}</span>
-                  <span className="block text-xs text-muted truncate">{p.description}</span>
+                  <span className="block text-xs text-muted line-clamp-2">{p.description}</span>
                 </button>
               </li>
             ))}

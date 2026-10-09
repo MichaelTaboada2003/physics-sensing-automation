@@ -80,11 +80,11 @@ export default function ScenePicker({ searchId, scenes, selectedId, onSelect }: 
                   <span title="Nubes, sombras y nieve dentro de tu zona (capa SCL)">
                     <span className="text-muted">Zona </span>
                     <span className={`figure font-bold ${cloudTone(s.local_cloud)}`}>
-                      {s.local_cloud === null ? '—' : `${s.local_cloud.toFixed(1)}%`}
+                      {s.local_cloud === null ? '—' : `${s.local_cloud.toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`}
                     </span>
                   </span>
                   <span title="Nubosidad del tile completo (110 × 110 km)" className="text-muted">
-                    Tile <span className="figure">{s.cloud_cover.toFixed(0)}%</span>
+                    Tile <span className="figure">{s.cloud_cover.toFixed(0)} %</span>
                   </span>
                 </span>
               </span>
