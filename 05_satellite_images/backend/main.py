@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import search, bands, indices, classifier, export
+from routers import search, bands, indices, classifier, export, compare, region
 
 app = FastAPI(title="Satellite Images API")
 
@@ -17,6 +17,8 @@ app.include_router(bands.router)
 app.include_router(indices.router)
 app.include_router(classifier.router)
 app.include_router(export.router)
+app.include_router(compare.router)
+app.include_router(region.router)
 
 if __name__ == "__main__":
     import uvicorn
