@@ -16,13 +16,14 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
-from core.indices import compute_indices, render_index_layer
+from core.indices import INDEX_NAMES, compute_indices, render_index_layer
+from core.sentinel import BAND_SET
 from session_store import get_session
 
 router = APIRouter()
 
 # Conjunto de nombres de índice válidos
-VALID_INDEX_NAMES: frozenset[str] = frozenset({"ndvi", "bsi", "ndwi"})
+VALID_INDEX_NAMES: frozenset[str] = frozenset(INDEX_NAMES)
 
 
 # ---------------------------------------------------------------------------
@@ -42,8 +43,8 @@ def get_index(
     Parameters
     ----------
     name : str
-        Nombre del índice espectral.  Debe ser uno de ``ndvi``, ``bsi`` o
-        ``ndwi`` (insensible a mayúsculas).
+        Nombre del índice espectral, uno de ``INDEX_NAMES``
+        (insensible a mayúsculas).
     session_id : str
         Identificador de la sesión (query param).
 
@@ -88,7 +89,7 @@ def get_index(
         )
 
     # Verificar que las bandas necesarias están disponibles — HTTP 409
-    required_bands = {"B02", "B03", "B04", "B08", "B11"}
+    required_bands = set(BAND_SET)
     if not required_bands.issubset(session.bands.keys()):
         missing = required_bands - set(session.bands.keys())
         raise HTTPException(

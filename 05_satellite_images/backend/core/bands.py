@@ -9,43 +9,36 @@ Requisitos cubiertos: 3.1, 3.2, 3.3, 3.6, 10.1, 10.2, 10.3, 10.4, 10.5
 
 from __future__ import annotations
 
+import concurrent.futures
 import io
 import json
 import time
 from typing import Generator
 
 import numpy as np
-import rasterio
-import rasterio.warp
-import rasterio.windows
 from rasterio.enums import Resampling
-from rasterio.transform import from_bounds
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from core.sentinel import (
+    BAND_SET,
+    SCL_ASSET,
+    boa_offset,
+    cloud_mask_from_scl,
+    read_on_grid,
+    read_window,
+    to_reflectance,
+)
 from session_store import SessionData, get_session
 
 # ---------------------------------------------------------------------------
 # Constantes
 # ---------------------------------------------------------------------------
 
-# Bandas a descargar, en orden.  B04 es la referencia de grilla (índice 2).
-BAND_SET = ["B02", "B03", "B04", "B08", "B11"]
-_B04_INDEX = 2  # posición de B04 en BAND_SET
-
-# Nombre del asset en el item STAC de Planetary Computer para cada banda.
-_ASSET_KEYS = {
-    "B02": "B02",
-    "B03": "B03",
-    "B04": "B04",
-    "B08": "B08",
-    "B11": "B11",
-}
-
-_BAND_TIMEOUT = 60   # segundos máximos por banda
 _MAX_RETRIES = 2     # reintentos ante errores transitorios
+_MAX_WORKERS = 6     # descargas simultáneas
 
 
 # ---------------------------------------------------------------------------
@@ -59,103 +52,17 @@ def _ndjson(stage: str, progress: float, message: str, **extra) -> str:
     return json.dumps(obj, ensure_ascii=False) + "\n"
 
 
-def resample_to_ref(array: np.ndarray, ref_shape: tuple[int, int]) -> np.ndarray:
-    """
-    Remuestrea *array* 2-D a *ref_shape* (H, W) usando interpolación bilineal.
-
-    Si *array* ya tiene la forma correcta se devuelve sin copiar.
-    Esta función es la base de la Property 1 (PBT test 4.3).
-
-    Parameters
-    ----------
-    array : np.ndarray
-        Array 2-D de entrada (cualquier dtype).
-    ref_shape : tuple[int, int]
-        Forma de destino ``(H, W)``.
-
-    Returns
-    -------
-    np.ndarray
-        Array con shape == ref_shape y dtype float32.
-    """
-    if array.shape == ref_shape:
-        return array.astype(np.float32)
-
-    src_h, src_w = array.shape
-    dst_h, dst_w = ref_shape
-
-    # Construimos transformaciones afines ficticias que mapean el array
-    # a un espacio normalizado [0, 1] × [0, 1] para que rasterio pueda
-    # hacer el remuestreo sin necesitar un CRS real.
-    src_transform = from_bounds(0, 0, 1, 1, src_w, src_h)
-    dst_transform = from_bounds(0, 0, 1, 1, dst_w, dst_h)
-
-    src = array.astype(np.float32)
-    dst = np.empty((dst_h, dst_w), dtype=np.float32)
-
-    rasterio.warp.reproject(
-        source=src,
-        destination=dst,
-        src_transform=src_transform,
-        src_crs="EPSG:4326",
-        dst_transform=dst_transform,
-        dst_crs="EPSG:4326",
-        resampling=Resampling.bilinear,
-    )
-    return dst
-
-
-def _read_band_windowed(
-    href: str,
-    bbox_lonlat: list[float],
-    timeout: int = _BAND_TIMEOUT,
-) -> tuple[np.ndarray, object, object]:
-    """
-    Abre *href* con rasterio, transforma el bbox al CRS del archivo,
-    lee la ventana correspondiente y devuelve ``(array_float32, crs, transform)``.
-
-    Parameters
-    ----------
-    href : str
-        URL firmada del asset de la banda.
-    bbox_lonlat : list[float]
-        ``[lon_min, lat_min, lon_max, lat_max]`` en EPSG:4326.
-    timeout : int
-        Tiempo máximo en segundos (se aplica mediante GDAL_HTTP_TIMEOUT).
-
-    Returns
-    -------
-    tuple
-        ``(data, crs, window_transform)`` donde *data* es float32 2-D.
-    """
-    import os
-    os.environ.setdefault("GDAL_HTTP_TIMEOUT", str(timeout))
-    os.environ.setdefault("GDAL_HTTP_MAX_RETRY", "0")  # los reintentos los manejamos nosotros
-
-    lon_min, lat_min, lon_max, lat_max = bbox_lonlat
-
-    with rasterio.open(href) as src:
-        crs = src.crs
-
-        # Transformar el bbox de EPSG:4326 al CRS del archivo
-        xs, ys = rasterio.warp.transform(
-            "EPSG:4326",
-            crs,
-            [lon_min, lon_max],
-            [lat_min, lat_max],
-        )
-        x_min, x_max = min(xs), max(xs)
-        y_min, y_max = min(ys), max(ys)
-
-        window = rasterio.windows.from_bounds(
-            x_min, y_min, x_max, y_max,
-            transform=src.transform,
-        )
-
-        data = src.read(1, window=window).astype(np.float32)
-        window_transform = src.window_transform(window)
-
-    return data, crs, window_transform
+def _with_retries(fn, *args, **kwargs):
+    """Ejecuta *fn* con reintentos ante errores transitorios de red."""
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt < _MAX_RETRIES:
+                time.sleep(1)
+    raise RuntimeError(f"{last_exc}") from last_exc
 
 
 # ---------------------------------------------------------------------------
@@ -167,24 +74,16 @@ def download_bands_stream(
     item,
 ) -> Generator[str, None, None]:
     """
-    Descarga las cinco bandas del Band_Set con windowed read (rasterio),
-    remuestrea a la grilla de B04 con interpolación bilineal y almacena
-    los resultados en la Session.
+    Descarga el Band_Set y la capa SCL de la escena y los almacena en la Session.
 
-    Emite líneas NDJSON ``{stage, progress, message}`` durante la descarga
-    y una línea final ``stage="done"``.
+    1. B04 se lee en su ventana nativa (10 m) y define la grilla de referencia.
+    2. El resto de bandas (10/20 m) y la SCL se leen en paralelo reproyectadas
+       directamente sobre esa grilla (bilineal para bandas, vecino más cercano
+       para la SCL), lo que garantiza alineación exacta.
+    3. Los DN se convierten a reflectancia de superficie y se construye la
+       máscara de nubes.
 
-    Parameters
-    ----------
-    session_id : str
-        Identificador de la Session activa.
-    item : pystac.Item
-        Item STAC con los assets de las bandas firmados.
-
-    Yields
-    ------
-    str
-        Líneas NDJSON de progreso (cada una termina en ``\\n``).
+    Emite líneas NDJSON ``{stage, progress, message}`` y una final ``stage="done"``.
     """
     session: SessionData | None = get_session(session_id)
     if session is None:
@@ -192,104 +91,70 @@ def download_bands_stream(
                       error="session_not_found")
         return
 
-    n_bands = len(BAND_SET)
-    bands_data: dict[str, np.ndarray] = {}
-    ref_shape: tuple[int, int] | None = None
-    ref_crs = None
-    ref_transform = None
-
-    yield _ndjson("downloading", 0.0, "Iniciando descarga de bandas…")
-
-    # Reserve the last 10 % of progress (0.9 → 1.0) for the resampling step,
-    # so the overall progress sequence is always monotone non-decreasing.
-    _DOWNLOAD_SHARE = 0.9
-
-    for band_idx, band_name in enumerate(BAND_SET):
-        progress_start = band_idx / n_bands * _DOWNLOAD_SHARE
-        progress_end = (band_idx + 1) / n_bands * _DOWNLOAD_SHARE
-
-        asset_key = _ASSET_KEYS[band_name]
-        try:
-            href = item.assets[asset_key].href
-        except (KeyError, AttributeError) as exc:
-            yield _ndjson(
-                "error",
-                progress_start,
-                f"Asset '{asset_key}' no encontrado en el item STAC.",
-                error=str(exc),
-            )
-            return
-
-        msg = f"Descargando {band_name} ({band_idx + 1}/{n_bands})…"
-        yield _ndjson("downloading", progress_start, msg)
-
-        # Reintentos ante errores transitorios
-        last_exc: Exception | None = None
-        data: np.ndarray | None = None
-        crs = None
-        transform = None
-
-        for attempt in range(_MAX_RETRIES + 1):
-            try:
-                t0 = time.monotonic()
-                data, crs, transform = _read_band_windowed(
-                    href, session.bbox, timeout=_BAND_TIMEOUT
-                )
-                elapsed = time.monotonic() - t0
-                break  # éxito
-            except Exception as exc:
-                last_exc = exc
-                if attempt < _MAX_RETRIES:
-                    retry_msg = (
-                        f"Error al leer {band_name} (intento {attempt + 1}/"
-                        f"{_MAX_RETRIES + 1}): {exc}. Reintentando…"
-                    )
-                    yield _ndjson("downloading", progress_start, retry_msg)
-                    time.sleep(1)  # pequeña pausa antes de reintentar
-
-        if data is None:
-            error_msg = (
-                f"Fallo al descargar {band_name} tras {_MAX_RETRIES + 1} "
-                f"intentos: {last_exc}"
-            )
-            yield _ndjson("error", progress_start, error_msg, error=str(last_exc))
-            return
-
-        # B04 es la referencia de grilla
-        if band_name == "B04":
-            ref_shape = data.shape
-            ref_crs = crs
-            ref_transform = transform
-
-        bands_data[band_name] = data
-
-        yield _ndjson(
-            "downloading",
-            progress_end,
-            f"{band_name} descargada ({data.shape[0]}×{data.shape[1]} px).",
-        )
-
-    # Remuestrear todas las bandas a la grilla de B04.
-    # Reservamos el 10 % final del progreso (0.9 → 1.0) para el remuestreo,
-    # de modo que la secuencia de progreso sea siempre monótona no decreciente.
-    if ref_shape is None:
-        yield _ndjson("error", 0.9, "B04 no fue descargada; no se puede remuestrear.",
-                      error="missing_b04")
+    assets = [*BAND_SET, SCL_ASSET]
+    missing = [a for a in assets if a not in item.assets]
+    if missing:
+        yield _ndjson("error", 0.0, f"Assets {missing} no encontrados en el item STAC.",
+                      error="missing_assets")
         return
 
-    yield _ndjson("resampling", 0.9, "Remuestreando bandas a la grilla de B04…")
+    n_total = len(assets)
+    yield _ndjson("downloading", 0.0,
+                  f"Iniciando descarga de {len(BAND_SET)} bandas + máscara SCL…")
 
-    resampled: dict[str, np.ndarray] = {}
-    for band_name, arr in bands_data.items():
-        resampled[band_name] = resample_to_ref(arr, ref_shape)
+    # 1. Banda de referencia
+    yield _ndjson("downloading", 0.02, "Descargando B04 (grilla de referencia, 10 m)…")
+    try:
+        ref, ref_crs, ref_transform = _with_retries(read_window, item.assets["B04"].href, session.bbox)
+    except Exception as exc:  # noqa: BLE001
+        yield _ndjson("error", 0.02, f"Fallo al descargar B04: {exc}", error=str(exc))
+        return
+    ref_shape = ref.shape
+    raw: dict[str, np.ndarray] = {"B04": ref}
+    yield _ndjson("downloading", 1 / n_total * 0.9,
+                  f"B04 descargada ({ref_shape[0]}×{ref_shape[1]} px).")
 
-    # Guardar en la sesión
-    session.bands = resampled
+    # 2. Resto de assets en paralelo, alineados a la grilla de B04
+    pending = [a for a in assets if a != "B04"]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
+        futures = {
+            pool.submit(
+                _with_retries, read_on_grid, item.assets[a].href, ref_crs, ref_transform, ref_shape,
+                Resampling.nearest if a == SCL_ASSET else Resampling.bilinear,
+            ): a
+            for a in pending
+        }
+        for fut in concurrent.futures.as_completed(futures):
+            name = futures[fut]
+            try:
+                raw[name] = fut.result()
+            except Exception as exc:  # noqa: BLE001
+                for f in futures:
+                    f.cancel()
+                yield _ndjson("error", len(raw) / n_total * 0.9,
+                              f"Fallo al descargar {name}: {exc}", error=str(exc))
+                return
+            yield _ndjson("downloading", len(raw) / n_total * 0.9,
+                          f"{name} descargada ({len(raw)}/{n_total}).")
+
+    # 3. Reflectancia + máscara de nubes
+    yield _ndjson("resampling", 0.92, "Convirtiendo a reflectancia y aplicando máscara SCL…")
+    offset = boa_offset(item)
+    cloud_mask = cloud_mask_from_scl(raw[SCL_ASSET])
+    session.bands = {b: to_reflectance(raw[b], offset) for b in BAND_SET}
+    session.cloud_mask = cloud_mask
+    session.cloud_fraction = float(cloud_mask.mean())
     session.crs = ref_crs
     session.transform = ref_transform
+    session.indices = {}
 
-    yield _ndjson("done", 1.0, "Descarga y remuestreo completados.",
-                  scene_id=session.scene_id)
+    yield _ndjson(
+        "done", 1.0,
+        f"Descarga completada. Nubes/sombras en la zona: {session.cloud_fraction * 100:.1f} %.",
+        scene_id=session.scene_id,
+        cloud_fraction=session.cloud_fraction,
+        shape=list(ref_shape),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -331,7 +196,7 @@ def generate_true_color(session: SessionData) -> bytes:
         if p98 == p2:
             return np.zeros_like(arr, dtype=np.float32)
         normed = (arr - p2) / (p98 - p2)
-        return np.clip(normed, 0.0, 1.0).astype(np.float32)
+        return np.nan_to_num(np.clip(normed, 0.0, 1.0), nan=0.0).astype(np.float32)
 
     r = _normalize(session.bands["B04"])
     g = _normalize(session.bands["B03"])

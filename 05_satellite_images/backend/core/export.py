@@ -32,7 +32,7 @@ _LEGEND_LABELS = [
     ("green",       "Vegetación"),
     ("blue",        "Agua"),
     ("saddlebrown", "Minería/Suelo expuesto"),
-    ("black",       "No clasificado"),
+    ("black",       "No clasificado / nube"),
 ]
 
 
