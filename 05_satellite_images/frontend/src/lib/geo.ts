@@ -23,28 +23,11 @@ export function bboxIsTooLarge(b: BBox): boolean {
   return bboxAreaKm2(b) > MAX_AREA_KM2;
 }
 
-// ── Región de trabajo (Colombia) ───────────────────────────────────────────────
+// ── Contorno de Colombia (referencia en el mapa) ───────────────────────────────────────────────
 
 export interface Region {
   name: string;
   bounds: BBox;
   /** Anillos exteriores de cada polígono, en [lon, lat]. */
   rings: [number, number][][];
-}
-
-/** Ray casting: ¿está (lon, lat) dentro del anillo? */
-function inRing([x, y]: [number, number], ring: [number, number][]): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i];
-    const [xj, yj] = ring[j];
-    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
-}
-
-/** Igual que el backend: válida si el centro o alguna esquina cae dentro de la región. */
-export function bboxInRegion([w, s, e, n]: BBox, region: Region): boolean {
-  const pts: [number, number][] = [[(w + e) / 2, (s + n) / 2], [w, s], [w, n], [e, s], [e, n]];
-  return pts.some(p => region.rings.some(r => inRing(p, r)));
 }

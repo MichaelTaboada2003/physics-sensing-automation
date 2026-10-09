@@ -1,7 +1,8 @@
 """
 core/region.py
 --------------
-Región de trabajo de la aplicación: Colombia.
+Contorno de Colombia, usado como referencia en el mapa (la app no restringe
+la zona de análisis a este territorio).
 
 El contorno proviene de Natural Earth v5.1.2 (dominio público): territorio
 continental a escala 1:50m más San Andrés, Providencia y Malpelo a 1:10m.
@@ -43,16 +44,3 @@ def region_bounds() -> list[float]:
 def contains(lon: float, lat: float) -> bool:
     """True si el punto (lon, lat) está dentro de Colombia (incluye islas)."""
     return any(ring.contains_point((lon, lat)) for ring in _outer_rings())
-
-
-def bbox_in_region(bbox: list[float]) -> bool:
-    """La zona es válida si alguna esquina o su centro cae dentro de Colombia.
-
-    Así se aceptan zonas fronterizas o costeras que sobresalen parcialmente.
-    """
-    lon_min, lat_min, lon_max, lat_max = bbox
-    points = [
-        ((lon_min + lon_max) / 2, (lat_min + lat_max) / 2),
-        (lon_min, lat_min), (lon_min, lat_max), (lon_max, lat_min), (lon_max, lat_max),
-    ]
-    return any(contains(x, y) for x, y in points)

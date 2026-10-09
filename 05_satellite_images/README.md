@@ -70,7 +70,7 @@ npm install && npm run dev
 
 ## 🧭 Dos modos
 
-- **Guiado** (para periodistas y no especialistas): eliges una zona de Colombia y un solo botón ejecuta todo el análisis (escena más despejada del último año → bandas → modelo con las reglas por defecto → mapa → serie de 10 años). El resultado es una frase con la tendencia de la vegetación, su intervalo de confianza y su significancia; un mapa antes/después; el gráfico de hectáreas por año; las descargas listas para publicar (imagen antes/después y gráfico de tendencia con el crédito de Copernicus, CSV, reporte) y un recuadro con lo que la herramienta mide y lo que no.
+- **Guiado** (para periodistas y no especialistas): eliges una zona y un solo botón ejecuta todo el análisis (escena más despejada del último año → bandas → modelo con las reglas por defecto → mapa → serie de 10 años). El resultado es una frase con la tendencia de la vegetación, su intervalo de confianza y su significancia; un mapa antes/después; el gráfico de hectáreas por año; las descargas listas para publicar (imagen antes/después y gráfico de tendencia con el crédito de Copernicus, CSV, reporte) y un recuadro con lo que la herramienta mide y lo que no.
 - **Experto**: los 6 pasos con todos los parámetros. La sesión es la misma: «Ver el análisis completo» abre en modo experto lo calculado en modo guiado.
 
 El selector está arriba del riel lateral y se recuerda en el navegador.
@@ -82,7 +82,7 @@ Mundo visual «pliego de herbario» (tradición del Herbario Nacional Colombiano
 ## 🗺️ Flujo de la Aplicación (6 pasos)
 
 ### Paso 1 — Zona y escena
-La app está enfocada en **Colombia**: el mapa (Leaflet + Esri World Imagery) resalta el país y oscurece el resto, no permite alejarse fuera de él y el buscador (Nominatim) solo devuelve lugares colombianos. El backend rechaza zonas fuera del territorio (`core/region.py`, contorno de Natural Earth en `backend/resources/colombia.geojson`, incluye San Andrés, Providencia y Malpelo; `GET /region`). Zonas de ejemplo: El Bagre, Río Quito, Hidroituango, Cerrejón, San José del Guaviare, Ciénaga Grande. Máximo 500 km².
+La zona puede estar en cualquier lugar del mundo; las zonas de ejemplo son colombianas y el buscador (Nominatim) **prioriza Colombia**: muestra primero los resultados en el país y luego los del resto del mundo, cada uno con su región y país. El contorno de Colombia (Natural Earth, `backend/resources/colombia.geojson`, `GET /region`) se dibuja como referencia, sin restringir el mapa. Zonas de ejemplo: El Bagre, Río Quito, Hidroituango, Cerrejón, San José del Guaviare, Ciénaga Grande. Máximo 500 km².
 `POST /scenes` lista hasta 12 escenas ordenadas por **nubosidad dentro de la zona**, medida con la capa SCL a baja resolución (la `eo:cloud_cover` del catálogo es la del tile completo de 110 × 110 km y suele engañar). Cada escena trae una miniatura recortada a la zona (`GET /scenes/thumbnail`). La escena elegida crea la sesión (`POST /search` con `search_id` + `scene_id`).
 
 ### Paso 2 — Descarga de Bandas

@@ -3,7 +3,7 @@ import { MapContainer, Polygon, Rectangle, useMap, useMapEvents } from 'react-le
 import type { LatLng, LatLngBoundsExpression, LatLngExpression, Map as LeafletMap } from 'leaflet';
 import { Square, Search, Loader2, Crosshair, Maximize2, Grid3x3 } from 'lucide-react';
 import type { BBox } from '../../types';
-import { MAX_AREA_KM2, PRESETS, WARN_AREA_KM2, bboxAreaKm2, bboxInRegion } from '../../lib/geo';
+import { MAX_AREA_KM2, PRESETS, WARN_AREA_KM2, bboxAreaKm2 } from '../../lib/geo';
 import type { Region } from '../../lib/geo';
 import { useRegion } from '../../hooks/useRegion';
 import BaseLayers from './basemaps';
@@ -63,36 +63,32 @@ function DrawHandler({
   return null;
 }
 
-// ── Foco en la región (Colombia) ───────────────────────────────────────────────
+// ── Buscador de lugares (Nominatim) ───────────────────────────────────────────
 
-const WORLD: LatLngExpression[] = [[-89, -179.9], [89, -179.9], [89, 179.9], [-89, 179.9]];
+interface PlaceResult {
+  osm_id: number;
+  display_name: string;
+  boundingbox: [string, string, string, string];
+}
+
+/** «Quibdó, Chocó, Colombia» → nombre y resto (región, país). */
+function splitPlace(name: string): { head: string; rest: string } {
+  // Sin códigos postales: «684021» no orienta a nadie
+  const parts = name.split(', ').filter(x => !/^\d[\d\s-]*$/.test(x));
+  return { head: parts[0], rest: parts.length > 2 ? `${parts[parts.length - 2]}, ${parts[parts.length - 1]}` : parts.slice(1).join(', ') };
+}
+
+// ── Contorno de Colombia (solo referencia: el mapa no se restringe) ───────────
+
 const toLatLngs = (ring: [number, number][]): LatLngExpression[] => ring.map(([lon, lat]) => [lat, lon]);
 
-function RegionFocus({ region }: { region: Region }) {
-  const map = useMap();
-  useEffect(() => {
-    const [w, s, e, n] = region.bounds;
-    const bounds: LatLngBoundsExpression = [[s, w], [n, e]];
-    map.setMinZoom(Math.max(3, map.getBoundsZoom(bounds) - 1));
-    // Margen de 2° para poder ver zonas fronterizas sin salir del país
-    map.setMaxBounds([[s - 2, w - 2], [n + 2, e + 2]]);
-  }, [map, region]);
-
-  const holes = region.rings.map(toLatLngs);
+function RegionOutline({ region }: { region: Region }) {
   return (
-    <>
-      {/* Todo lo que no es Colombia queda oscurecido */}
-      <Polygon
-        positions={[WORLD, ...holes]}
-        interactive={false}
-        pathOptions={{ stroke: false, fillColor: '#1b2430', fillOpacity: 0.55 }}
-      />
-      <Polygon
-        positions={holes}
-        interactive={false}
-        pathOptions={{ color: '#fbfcf8', weight: 1.5, opacity: 0.9, fill: false }}
-      />
-    </>
+    <Polygon
+      positions={region.rings.map(toLatLngs)}
+      interactive={false}
+      pathOptions={{ color: '#fbfcf8', weight: 1.5, opacity: 0.75, fill: false, dashArray: '4 3' }}
+    />
   );
 }
 
@@ -124,6 +120,7 @@ export default function AoiMap({ bbox, onChange, focus, heightClass = 'h-[420px]
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [results, setResults] = useState<PlaceResult[]>([]);
 
   // Volar a la zona elegida desde fuera del mapa (zonas de ejemplo)
   const focusN = focus?.n;
@@ -145,23 +142,31 @@ export default function AoiMap({ bbox, onChange, focus, heightClass = 'h-[420px]
     onChange(fromCorners(v.getSouthWest(), v.getNorthEast()));
   };
 
-  // Sin <form>: este mapa vive dentro del formulario de búsqueda de escenas
+  // Sin <form>: este mapa vive dentro del formulario de búsqueda de escenas.
+  // Prioriza Colombia: sus resultados van primero y luego los del resto del mundo.
   const handleSearch = async () => {
     if (!query.trim() || !map) return;
     setSearching(true);
     setSearchError(null);
-    try {
+    setResults([]);
+    const lookup = async (cc: string) => {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=co&q=${encodeURIComponent(query)}`,
+        `https://nominatim.openstreetmap.org/search?format=json&limit=5${cc}&q=${encodeURIComponent(query)}`,
         { headers: { 'Accept-Language': 'es' } },
       );
-      const data: { boundingbox: [string, string, string, string] }[] = await res.json();
-      if (!data.length) {
-        setSearchError(`No encontramos «${query}» en Colombia. Prueba con un municipio o departamento.`);
-        return;
+      return (await res.json()) as PlaceResult[];
+    };
+    try {
+      const [co, world] = await Promise.all([lookup('&countrycodes=co'), lookup('')]);
+      const seen = new Set(co.map(r => r.osm_id));
+      const merged = [...co, ...world.filter(r => !seen.has(r.osm_id))].slice(0, 8);
+      if (!merged.length) {
+        setSearchError(`No encontramos «${query}». Prueba con un municipio, departamento o país.`);
+      } else if (merged.length === 1) {
+        flyToPlace(merged[0]);
+      } else {
+        setResults(merged);
       }
-      const [s, n, w, e] = data[0].boundingbox.map(Number);
-      map.flyToBounds([[s, w], [n, e]], { duration: 0.8, maxZoom: 13 });
     } catch {
       setSearchError('El buscador de lugares no respondió. Revisa tu conexión e inténtalo de nuevo.');
     } finally {
@@ -169,8 +174,13 @@ export default function AoiMap({ bbox, onChange, focus, heightClass = 'h-[420px]
     }
   };
 
+  const flyToPlace = (r: PlaceResult) => {
+    const [s, n, w, e] = r.boundingbox.map(Number);
+    map?.flyToBounds([[s, w], [n, e]], { duration: 0.8, maxZoom: 13 });
+    setResults([]);
+  };
+
   const area = bbox ? bboxAreaKm2(bbox) : 0;
-  const outside = !!(bbox && region && !bboxInRegion(bbox, region));
 
   return (
     <div className="sheet overflow-hidden">
@@ -181,14 +191,14 @@ export default function AoiMap({ bbox, onChange, focus, heightClass = 'h-[420px]
           <input
             id="place-search"
             value={query}
-            onChange={e => setQuery(e.target.value)}
+            onChange={e => { setQuery(e.target.value); setResults([]); }}
             onKeyDown={e => {
               if (e.key === 'Enter') {
                 e.preventDefault();
                 handleSearch();
               }
             }}
-            placeholder="Buscar municipio o lugar…"
+            placeholder="Buscar lugar (prioriza Colombia)…"
             className="field flex-1 min-w-0"
           />
           <button type="button" onClick={handleSearch} className="btn btn-secondary px-3" aria-label="Buscar lugar">
@@ -226,18 +236,32 @@ export default function AoiMap({ bbox, onChange, focus, heightClass = 'h-[420px]
         </div>
       </div>
       {searchError && <p className="px-3 py-2 text-sm text-signal border-b border-rule">{searchError}</p>}
+      {results.length > 0 && (
+        <ul className="border-b border-rule bg-paper divide-y divide-rule max-h-64 overflow-y-auto" aria-label="Resultados de la búsqueda">
+          {results.map(r => {
+            const { head, rest } = splitPlace(r.display_name);
+            return (
+              <li key={r.osm_id}>
+                <button type="button" onClick={() => flyToPlace(r)} className="w-full text-left px-3 py-2 hover:bg-paper-2">
+                  <span className="font-semibold">{head}</span>
+                  <span className="text-sm text-muted"> · {rest}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       {/* Mapa */}
       <div className={`relative ${heightClass}`}>
         <MapContainer
           bounds={toBounds(bbox ?? PRESETS[0].bbox)}
           boundsOptions={{ padding: [48, 48] }}
-          maxBoundsViscosity={1.0}
           className="h-full w-full"
           scrollWheelZoom
         >
           <BaseLayers />
-          {region && <RegionFocus region={region} />}
+          {region && <RegionOutline region={region} />}
           {grid && <Graticule />}
           <MapRefSetter onMap={setMap} />
           <DrawHandler
@@ -248,7 +272,7 @@ export default function AoiMap({ bbox, onChange, focus, heightClass = 'h-[420px]
           {bbox && !draft && (
             <Rectangle
               bounds={toBounds(bbox)}
-              pathOptions={{ color: outside ? '#b42318' : '#fbfcf8', weight: 2, fillColor: '#5a4a9c', fillOpacity: 0.12 }}
+              pathOptions={{ color: '#fbfcf8', weight: 2, fillColor: '#5a4a9c', fillOpacity: 0.12 }}
             />
           )}
           {draft && (
@@ -260,13 +284,11 @@ export default function AoiMap({ bbox, onChange, focus, heightClass = 'h-[420px]
           <p
             className={`absolute left-3 bottom-3 z-[1000] sheet px-2.5 py-1 text-sm shadow-[var(--shadow-sheet)] pointer-events-none ${
               // Con la etiqueta visible el área ya se lee ahí: el aviso solo aparece si hay problema
-              children && !outside && area <= WARN_AREA_KM2 ? 'sm:hidden' : ''
+              children && area <= WARN_AREA_KM2 ? 'sm:hidden' : ''
             }`}
           >
             <span className="figure">{area.toLocaleString('es-CO', { maximumFractionDigits: 0 })} km²</span>
-            {outside
-              ? <span className="text-signal font-semibold"> · fuera de {region?.name}</span>
-              : area > MAX_AREA_KM2
+            {area > MAX_AREA_KM2
               ? <span className="text-signal font-semibold"> · supera {MAX_AREA_KM2.toLocaleString('es-CO')} km²</span>
               : area > WARN_AREA_KM2
               ? <span className="text-ink-2"> · la descarga tardará más</span>

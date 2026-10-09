@@ -60,7 +60,7 @@ const INITIAL_STATE: AppState = {
 const STEPS: { id: AppStep; label: string; title: string; purpose: string }[] = [
   {
     id: 1, label: 'Zona y escena', title: 'Zona y escena',
-    purpose: 'Elige un lugar de Colombia y la imagen Sentinel-2 con menos nubes sobre él.',
+    purpose: 'Elige un lugar y la imagen Sentinel-2 con menos nubes sobre él.',
   },
   {
     id: 2, label: 'Bandas', title: 'Descarga de bandas',
@@ -87,7 +87,7 @@ const STEPS: { id: AppStep; label: string; title: string; purpose: string }[] = 
 const GUIDED_STAGES: { id: GuidedStage; label: string; title: string; purpose: string }[] = [
   {
     id: 'zone', label: 'Elegir zona', title: '¿Qué cambió en este lugar?',
-    purpose: 'Elige una zona de Colombia y revisamos cómo cambió su vegetación en los últimos 10 años.',
+    purpose: 'Elige una zona y revisamos cómo cambió su vegetación en los últimos 10 años.',
   },
   {
     id: 'running', label: 'Análisis', title: 'Analizando la zona',
@@ -154,7 +154,7 @@ function App() {
         <div className="flex items-center justify-between gap-3 px-4 pt-3 pb-2 lg:block lg:px-0 lg:pt-0 lg:pb-0">
           <div className="lg:px-5 lg:pt-7 lg:pb-6">
             <p className="font-serif text-lg lg:text-xl font-semibold leading-tight">Imágenes Satelitales</p>
-            <p className="hidden lg:block text-sm text-folder-muted mt-0.5">Cobertura terrestre · Colombia</p>
+            <p className="hidden lg:block text-sm text-folder-muted mt-0.5">Cobertura terrestre</p>
           </div>
           <div className="lg:px-3 lg:pb-5 shrink-0">
             <div className="flex lg:w-full p-[3px] rounded-[5px] bg-folder-2" role="group" aria-label="Modo">

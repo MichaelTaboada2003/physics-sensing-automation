@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import { Search, AlertCircle, Loader2, ArrowRight } from 'lucide-react';
 import type { BBox, SceneCandidate, ScenesResponse, SearchResponse, Zone } from '../types';
-import { MAX_AREA_KM2, PRESETS, bboxInRegion, bboxIsTooLarge } from '../lib/geo';
-import type { Region } from '../lib/geo';
-import { useRegion } from '../hooks/useRegion';
+import { MAX_AREA_KM2, PRESETS, bboxIsTooLarge } from '../lib/geo';
 import AoiMap from './map/AoiMap';
 import ScenePicker from './ScenePicker';
 import SpecimenLabel from './SpecimenLabel';
@@ -52,7 +50,6 @@ function validateForm(
   dateStart: string,
   dateEnd: string,
   cloud: string,
-  region: Region | null = null,
 ): ValidationErrors {
   const errors: ValidationErrors = {};
 
@@ -83,9 +80,6 @@ function validateForm(
   if (!errors.lonMin && !errors.lonMax && !errors.latMin && !errors.latMax && !errors.bboxRelation
       && bboxIsTooLarge([lonMinN, latMinN, lonMaxN, latMaxN]))
     errors.bboxRelation = `La zona supera el máximo de ${MAX_AREA_KM2} km²`;
-  else if (region && !errors.lonMin && !errors.lonMax && !errors.latMin && !errors.latMax && !errors.bboxRelation
-      && !bboxInRegion([lonMinN, latMinN, lonMaxN, latMaxN], region))
-    errors.bboxRelation = `La zona debe estar en ${region.name}`;
 
   // Date format and validity checks (R1.6)
   if (!isValidDate(dateStart))
@@ -125,7 +119,6 @@ interface SearchPanelProps {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
-  const region = useRegion();
   // Form state
   const [lonMin, setLonMin] = useState(DEFAULT_BBOX[0].toString());
   const [latMin, setLatMin] = useState(DEFAULT_BBOX[1].toString());
@@ -183,7 +176,7 @@ export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
     setTouched(true);
     setApiError(null);
 
-    const validationErrors = validateForm(lonMin, latMin, lonMax, latMax, dateStart, dateEnd, cloud, region);
+    const validationErrors = validateForm(lonMin, latMin, lonMax, latMax, dateStart, dateEnd, cloud);
     setErrors(validationErrors);
 
     if (Object.keys(validationErrors).length > 0) return;
@@ -249,7 +242,6 @@ export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
       overrides.dateStart ?? dateStart,
       overrides.dateEnd ?? dateEnd,
       overrides.cloud ?? cloud,
-      region,
     ));
   };
 

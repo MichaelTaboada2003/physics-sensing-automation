@@ -22,7 +22,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from core.region import REGION_NAME, bbox_in_region
 from core.search import list_scenes, search_scene
 from core.sentinel import read_thumbnail
 from session_store import SessionData, create_search, create_session, get_search
@@ -103,10 +102,6 @@ class SearchRequest(BaseModel):
             raise ValueError(
                 f"El área del bbox ({area_km2:.0f} km²) supera el máximo de {MAX_AREA_KM2} km². "
                 "Reduzca la zona de interés."
-            )
-        if not bbox_in_region(v):
-            raise ValueError(
-                f"La zona debe estar en {REGION_NAME}: ni su centro ni sus esquinas caen dentro del territorio."
             )
         return v
 

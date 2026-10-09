@@ -31,7 +31,7 @@ A guided, Colombia-focused change-detection workflow that runs end to end on rea
 ## Capabilities and Constraints
 
 - Data: Sentinel-2 L2A from Microsoft Planetary Computer; reliable coverage from 2017, irregular before.
-- Region: Colombia only (mainland plus San Andrés, Providencia and Malpelo); AOI up to 500 km².
+- Region: any AOI worldwide (decision 2026-10-09, reverting the Colombia-only scope); Colombia stays the focus through Colombian example zones, a reference outline on the map and place search that lists Colombian matches first. AOI up to 500 km².
 - Current classes: Vegetación, Agua, Minería / suelo expuesto, Sin datos / nube.
 - Outputs today: before/after map slider, comparison figure, area tables in hectares, change polygons (GeoJSON), area CSV, printable HTML report.
 - Journalist needs (confirmed): publishable before/after images, trend charts, and figures with their uncertainty.
@@ -49,7 +49,7 @@ A guided, Colombia-focused change-detection workflow that runs end to end on rea
 
 1. **Never overstate the evidence.** Every number travels with its uncertainty, its date and what it actually measures; non-significant changes are labelled as such.
 2. **Two depths, one truth.** The guided mode simplifies the path, never the result: the journalist sees the same figures the analyst computed.
-3. **Colombia first.** Places, examples, language and defaults speak to Colombian geography.
+3. **Colombia first, not Colombia only.** Examples, search priority, language and defaults speak to Colombian geography; analysis works anywhere.
 4. **Show the place.** The satellite image and the map are the primary evidence; tables and charts support them.
 5. **Real time is part of the story.** Long steps must say what is happening and why it takes time.
 

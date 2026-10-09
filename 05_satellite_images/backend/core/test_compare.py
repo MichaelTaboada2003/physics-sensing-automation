@@ -287,20 +287,22 @@ def test_search_rejects_oversized_bbox():
     assert r.status_code in (400, 422) and "km²" in r.text
 
 
-def test_region_limits_search_to_colombia():
-    from core.region import bbox_in_region, contains
+def test_region_outline_and_search_outside_colombia():
+    from core.region import contains
     assert contains(-74.08, 4.65)                       # Bogotá
     assert contains(-81.70, 12.55)                      # San Andrés
     assert not contains(-66.90, 10.50)                  # Caracas
-    assert bbox_in_region([-70.0, -4.25, -69.9, -4.15])  # Leticia (zona en la frontera)
 
-    base = {"time_range": "2025-01-01/2025-12-31", "cloud_cover_threshold": 60}
-    r = client.post("/scenes", json={**base, "bbox": [-66.95, 10.45, -66.85, 10.55]})  # Caracas
-    assert r.status_code in (400, 422) and "Colombia" in r.text
+    # La zona ya no se restringe a Colombia: Caracas pasa la validación
+    # (search_scene se mockea para no consultar el catálogo)
+    payload = {"bbox": [-66.95, 10.45, -66.85, 10.55], "time_range": "2025-01-01/2025-12-31",
+               "cloud_cover_threshold": 60}
+    with patch("routers.search.list_scenes", return_value=[]):
+        r = client.post("/scenes", json=payload)
+    assert r.status_code == 200, r.text
 
     reg = client.get("/region").json()
     assert reg["name"] == "Colombia" and reg["geojson"]["features"][0]["geometry"]["type"] == "MultiPolygon"
-
 
 def test_map_stats_for_label():
     sid, session = _make_session()

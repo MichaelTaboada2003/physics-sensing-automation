@@ -8,8 +8,7 @@ import type { BBox, LayerKind, ScenesResponse, SearchResponse, StreamLine, TimeS
 import { useProgressStream } from '../hooks/useProgressStream';
 import { useLayerBounds } from '../hooks/useLayerBounds';
 import { useMapStats } from '../hooks/useMapStats';
-import { PRESETS, bboxIsTooLarge, bboxInRegion } from '../lib/geo';
-import { useRegion } from '../hooks/useRegion';
+import { PRESETS, bboxIsTooLarge } from '../lib/geo';
 import { DEFAULT_THRESHOLDS } from '../lib/classifier';
 import AoiMap from './map/AoiMap';
 import SwipeMap from './map/SwipeMap';
@@ -54,7 +53,6 @@ const fmt = (v: number | null | undefined, d = 1) =>
 export default function GuidedFlow({
   stage, onStage, onSession, onMapReady, onOpenExpert, sessionId, zone, sceneInfo,
 }: GuidedFlowProps) {
-  const region = useRegion();
   const { consume } = useProgressStream();
 
   // Zona
@@ -69,9 +67,8 @@ export default function GuidedFlow({
   const [error, setError] = useState<{ task: TaskId; text: string } | null>(null);
   const [series, setSeries] = useState<TimeSeries | null>(null);
 
-  const zoneError =
-    region && !bboxInRegion(bbox, region) ? 'La zona debe estar en Colombia.'
-    : bboxIsTooLarge(bbox) ? 'La zona es demasiado grande: dibuja una más pequeña (máximo 500 km²).'
+  const zoneError = bboxIsTooLarge(bbox)
+    ? 'La zona es demasiado grande: dibuja una más pequeña (máximo 500 km²).'
     : null;
 
   /** Envuelve un stream NDJSON en una promesa que resuelve con la línea final. */
