@@ -118,7 +118,13 @@ export default function SpecimenLabel({
                   <dt className="text-muted">Fecha</dt>
                   <dd className="figure text-right">{scene.datetime.slice(0, 10)}</dd>
                   <dt className="text-muted">Satélite</dt>
-                  <dd className="figure text-right">{meta.collector}{meta.tile ? ` · ${meta.tile}` : ''}</dd>
+                  <dd className="figure text-right">{meta.collector}</dd>
+                  {meta.tile && (
+                    <>
+                      <dt className="text-muted">Tile</dt>
+                      <dd className="figure text-right">{meta.tile}</dd>
+                    </>
+                  )}
                 </>
               )}
               {cloudFraction !== null && cloudFraction !== undefined && (

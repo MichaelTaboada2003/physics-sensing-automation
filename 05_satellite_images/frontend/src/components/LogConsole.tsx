@@ -7,46 +7,34 @@ interface LogConsoleProps {
 }
 
 function lineColor(stage: string): string {
-  if (stage === 'error') return 'text-red-400';
-  if (stage === 'done')  return 'text-emerald-400';
-  return 'text-zinc-400';
+  if (stage === 'error') return 'text-signal';
+  if (stage === 'done') return 'text-veg';
+  return 'text-ink-2';
 }
 
+/** Registro técnico del proceso (mensajes NDJSON del backend). */
 export default function LogConsole({ lines, maxLines = 40 }: LogConsoleProps) {
-  const endRef = useRef<HTMLDivElement>(null);
-
-  // Keep only the last N lines
+  const boxRef = useRef<HTMLDivElement>(null);
   const visible = lines.slice(-maxLines);
 
-  // Auto-scroll to bottom whenever lines change
+  // Desplaza solo la caja del registro, nunca la página
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = boxRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [lines]);
 
   return (
-    <div className="w-full bg-black rounded-2xl border border-white/5 p-4 shadow-inner">
-      <div className="flex items-center justify-between mb-3 border-b border-white/5 pb-3">
-        <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">
-          Console
-        </span>
-        <div className="w-2 h-2 rounded-full bg-zinc-700" />
-      </div>
-
-      <div className="font-mono text-[11px] leading-relaxed max-h-48 overflow-y-auto custom-scrollbar space-y-0.5">
-        {visible.length === 0 ? (
-          <span className="text-zinc-700">Esperando mensajes...</span>
-        ) : (
-          visible.map((line, i) => (
-            <div key={i} className={`flex gap-2 ${lineColor(line.stage)}`}>
-              <span className="text-zinc-700 shrink-0">
-                [{Math.round(line.progress * 100).toString().padStart(3, ' ')}%]
-              </span>
-              <span className="break-all">{line.message}</span>
-            </div>
-          ))
-        )}
-        <div ref={endRef} />
-      </div>
+    <div ref={boxRef} className="figure text-[0.8125rem] leading-relaxed max-h-44 overflow-y-auto bg-paper-2 border border-rule rounded-[4px] p-3 space-y-0.5">
+      {visible.length === 0 ? (
+        <span className="text-muted">Sin mensajes todavía.</span>
+      ) : (
+        visible.map((line, i) => (
+          <div key={i} className={`flex gap-2 ${lineColor(line.stage)}`}>
+            <span className="text-muted shrink-0 w-11 text-right">{Math.round(line.progress * 100)} %</span>
+            <span className="break-words min-w-0">{line.message}</span>
+          </div>
+        ))
+      )}
     </div>
   );
 }

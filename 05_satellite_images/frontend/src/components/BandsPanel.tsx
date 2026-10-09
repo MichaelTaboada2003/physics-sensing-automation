@@ -1,13 +1,22 @@
 import { useState, useCallback } from 'react';
-import { Layers, Download, AlertCircle, CheckCircle2, Loader2, Calendar, Cloud, Hash } from 'lucide-react';
+import { Download, RotateCcw, ArrowRight } from 'lucide-react';
 import type { StreamLine } from '../types';
 import { useProgressStream } from '../hooks/useProgressStream';
-import ProgressBar from './ProgressBar';
-import LogConsole from './LogConsole';
+import TaskProgress from './TaskProgress';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const API_BASE = '';
+
+const BAND_ROWS: [string, string, string][] = [
+  ['B02', 'Azul', '10 m'],
+  ['B03', 'Verde', '10 m'],
+  ['B04', 'Rojo', '10 m'],
+  ['B05 – B07', 'Borde rojo: estado de la vegetación', '20 m'],
+  ['B08', 'Infrarrojo cercano: biomasa', '10 m'],
+  ['B11 – B12', 'Infrarrojo de onda corta: suelo y humedad', '20 m'],
+  ['SCL', 'Clasificación de escena: nubes, sombras, nieve', '20 m'],
+];
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -17,11 +26,13 @@ interface BandsPanelProps {
   sessionId: string;
   sceneInfo: { id: string; datetime: string; cloudCover: number };
   onComplete: () => void;
+  /** Se llama al terminar la descarga (la etiqueta del ejemplar se actualiza). */
+  onDownloaded?: () => void;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function BandsPanel({ sessionId, sceneInfo, onComplete }: BandsPanelProps) {
+export default function BandsPanel({ sessionId, sceneInfo, onComplete, onDownloaded }: BandsPanelProps) {
   const [status, setStatus] = useState<DownloadStatus>('idle');
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<StreamLine[]>([]);
@@ -56,6 +67,7 @@ export default function BandsPanel({ sessionId, sceneInfo, onComplete }: BandsPa
         setStatus('done');
         setPreviewKey(k => k + 1);
         if (line.cloud_fraction !== undefined) setCloudFraction(line.cloud_fraction);
+        onDownloaded?.();
       },
       // onError
       (line) => {
@@ -75,160 +87,82 @@ export default function BandsPanel({ sessionId, sceneInfo, onComplete }: BandsPa
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="w-full max-w-3xl mx-auto animate-fade-in space-y-6">
-
-      {/* ── Scene metadata card ── */}
-      <div className="bg-zinc-900/40 rounded-2xl border border-white/5 p-6">
-        <div className="flex items-center gap-3 mb-5">
-          <div className="p-2 bg-blue-500/10 rounded-lg border border-blue-500/20">
-            <Layers className="w-4 h-4 text-blue-400" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-zinc-200">Escena seleccionada</h3>
-            <p className="text-xs text-zinc-500">Sentinel-2 L2A — 9 bandas (B02–B07, B08, B11, B12) + máscara de nubes SCL</p>
-          </div>
+    <div className="space-y-6">
+      {status !== 'done' && (
+        <div className="sheet overflow-hidden">
+          <table className="data-table">
+            <caption className="sr-only">Bandas que se descargan</caption>
+            <thead>
+              <tr>
+                <th scope="col">Banda</th>
+                <th scope="col">Qué mide</th>
+                <th scope="col" className="!text-right">Resolución</th>
+              </tr>
+            </thead>
+            <tbody>
+              {BAND_ROWS.map(([band, what, res]) => (
+                <tr key={band}>
+                  <td className="figure font-bold whitespace-nowrap">{band}</td>
+                  <td className="text-ink-2">{what}</td>
+                  <td className="num">{res}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
+      )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-black/30 rounded-xl p-4">
-            <div className="flex items-center gap-1.5 mb-1">
-              <Hash className="w-3 h-3 text-zinc-600" />
-              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">ID de escena</p>
-            </div>
-            <p className="text-xs font-mono text-zinc-300 break-all">{sceneInfo.id}</p>
-          </div>
-          <div className="bg-black/30 rounded-xl p-4">
-            <div className="flex items-center gap-1.5 mb-1">
-              <Calendar className="w-3 h-3 text-zinc-600" />
-              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Fecha de adquisición</p>
-            </div>
-            <p className="text-sm font-mono text-zinc-200">{sceneInfo.datetime.slice(0, 10)}</p>
-          </div>
-          <div className="bg-black/30 rounded-xl p-4">
-            <div className="flex items-center gap-1.5 mb-1">
-              <Cloud className="w-3 h-3 text-zinc-600" />
-              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Cobertura nubosa</p>
-            </div>
-            <p className="text-sm font-mono text-blue-400 font-bold">{sceneInfo.cloudCover.toFixed(1)} %</p>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Download button / status ── */}
       {status === 'idle' && (
-        <button
-          onClick={handleDownload}
-          className="w-full py-4 rounded-2xl font-bold text-base transition-all shadow-lg flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/20 active:scale-[0.98]"
-        >
-          <Download className="w-5 h-5" />
+        <button onClick={handleDownload} className="btn btn-primary">
+          <Download className="w-4 h-4" />
           Descargar bandas
         </button>
       )}
 
+      <TaskProgress
+        status={status === 'downloading' ? 'running' : status}
+        progress={progress}
+        lines={logs}
+        error={errorMsg}
+        titles={{
+          running: 'Descargando bandas…',
+          done: 'Bandas listas en reflectancia de superficie',
+          error: 'No se pudo completar la descarga',
+        }}
+      />
+
       {status === 'error' && (
-        <button
-          onClick={handleRetry}
-          className="w-full py-4 rounded-2xl font-bold text-base transition-all shadow-lg flex items-center justify-center gap-3 bg-zinc-700 hover:bg-zinc-600 text-white active:scale-[0.98]"
-        >
-          <Download className="w-5 h-5" />
+        <button onClick={handleRetry} className="btn btn-secondary">
+          <RotateCcw className="w-4 h-4" />
           Reintentar descarga
         </button>
       )}
 
-      {/* ── Progress section (visible while downloading or after error) ── */}
-      {(status === 'downloading' || status === 'error' || status === 'done') && (
-        <div className="space-y-4">
-          {/* Progress bar */}
-          <div className="bg-zinc-900/40 rounded-2xl border border-white/5 p-6">
-            <div className="flex items-center gap-3 mb-4">
-              {status === 'downloading' && (
-                <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
-              )}
-              {status === 'done' && (
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              )}
-              {status === 'error' && (
-                <AlertCircle className="w-4 h-4 text-red-400" />
-              )}
-              <span className="text-sm font-bold text-zinc-300">
-                {status === 'downloading' && 'Descargando bandas…'}
-                {status === 'done' && 'Descarga completada'}
-                {status === 'error' && 'Error en la descarga'}
-              </span>
-            </div>
-            <ProgressBar
-              progress={progress}
-              label={status === 'downloading' ? 'Progreso' : undefined}
-            />
-          </div>
-
-          {/* Error message */}
-          {status === 'error' && errorMsg && (
-            <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
-              <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-400 font-medium">{errorMsg}</p>
-            </div>
-          )}
-
-          {/* Log console */}
-          <LogConsole lines={logs} />
-        </div>
-      )}
-
-      {/* ── True color preview (shown after successful download) ── */}
       {status === 'done' && (
-        <div className="bg-zinc-900/40 rounded-2xl border border-white/5 p-6 animate-fade-in">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="p-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
-              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-zinc-200">Vista en color real</h3>
-              <p className="text-xs text-zinc-500">Reflectancia B04/B03/B02 normalizada por percentiles (2–98)</p>
-            </div>
-          </div>
-
-          <div className="rounded-xl overflow-hidden border border-white/5 bg-black/40">
-            <img
-              key={previewKey}
-              src={`${API_BASE}/preview/truecolor?session_id=${sessionId}`}
-              alt="Vista en color real de la escena Sentinel-2"
-              className="w-full object-contain max-h-[480px]"
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = 'none';
-                setErrorMsg('No se pudo cargar la imagen de previsualización.');
-              }}
-            />
-          </div>
-
-          {/* Metadata below the image */}
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="bg-black/30 rounded-xl p-3">
-              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">ID de escena</p>
-              <p className="text-xs font-mono text-zinc-300 break-all">{sceneInfo.id}</p>
-            </div>
-            <div className="bg-black/30 rounded-xl p-3">
-              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Fecha</p>
-              <p className="text-sm font-mono text-zinc-200">{sceneInfo.datetime.slice(0, 10)}</p>
-            </div>
-            <div className="bg-black/30 rounded-xl p-3">
-              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Nubes en tu zona (SCL)</p>
-              <p className="text-sm font-mono text-emerald-400 font-bold">
-                {cloudFraction === null ? '—' : `${(cloudFraction * 100).toFixed(1)} %`}
-                <span className="text-zinc-500 font-normal text-xs"> · tile {sceneInfo.cloudCover.toFixed(0)} %</span>
-              </p>
-            </div>
-          </div>
-
-          {/* Advance to next step */}
-          <button
-            onClick={onComplete}
-            className="mt-6 w-full py-3 rounded-2xl font-bold text-sm transition-all shadow-lg flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20 active:scale-[0.98]"
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            Continuar a Índices Espectrales
-          </button>
-        </div>
+        <figure className="sheet overflow-hidden animate-fade-in">
+          <img
+            key={previewKey}
+            src={`${API_BASE}/preview/truecolor?session_id=${sessionId}`}
+            alt={`Color real de la escena del ${sceneInfo.datetime.slice(0, 10)}`}
+            className="w-full max-h-[560px] object-contain bg-paper-2"
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = 'none';
+              setErrorMsg('No se pudo cargar la vista en color real.');
+            }}
+          />
+          <figcaption className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-rule">
+            <span className="text-sm text-ink-2">
+              Color real (B04 · B03 · B02), escena del <span className="figure">{sceneInfo.datetime.slice(0, 10)}</span>
+              {cloudFraction !== null && (
+                <> · nubes en la zona <span className="figure">{(cloudFraction * 100).toLocaleString('es-CO', { maximumFractionDigits: 1 })} %</span></>
+              )}
+            </span>
+            <button onClick={onComplete} className="btn btn-primary">
+              Ver índices espectrales
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </figcaption>
+        </figure>
       )}
     </div>
   );

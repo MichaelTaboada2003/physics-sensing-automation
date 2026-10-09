@@ -1,22 +1,9 @@
 import { useState, useCallback } from 'react';
-import {
-  Cpu,
-  Eye,
-  Play,
-  Map,
-  AlertCircle,
-  CheckCircle2,
-  Loader2,
-  Leaf,
-  Droplets,
-  Mountain,
-  ChevronRight,
-} from 'lucide-react';
+import { Eye, Play, Map as MapIcon, Loader2 } from 'lucide-react';
 import type { ClassifierMetrics as Metrics, StreamLine, ThresholdPreviewResponse } from '../types';
 import ClassifierMetrics from './ClassifierMetrics';
 import { useProgressStream } from '../hooks/useProgressStream';
-import ProgressBar from './ProgressBar';
-import LogConsole from './LogConsole';
+import TaskProgress from './TaskProgress';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -35,7 +22,6 @@ const DEFAULT_THRESHOLDS = {
 
 type ThresholdKey = keyof typeof DEFAULT_THRESHOLDS;
 
-type WorkflowStep = 'preview' | 'train' | 'predict';
 type StepStatus   = 'idle' | 'running' | 'done' | 'error';
 
 interface ClassifierPanelProps {
@@ -43,20 +29,23 @@ interface ClassifierPanelProps {
   onComplete: () => void;
 }
 
-interface ThresholdField {
-  key: ThresholdKey;
+// Reglas tal como las aplica el backend: comparaciones estrictas (core/classifier.py)
+const RULES: {
+  cls: 'vegetation' | 'water' | 'mining';
   label: string;
-  description: string;
-}
-
-const THRESHOLD_FIELDS: ThresholdField[] = [
-  { key: 'ndvi_veg_min',    label: 'NDVI veg. mín.',    description: 'Vegetación: NDVI ≥ este valor' },
-  { key: 'bsi_veg_max',     label: 'BSI veg. máx.',     description: 'Vegetación: BSI ≤ este valor' },
-  { key: 'ndwi_water_min',  label: 'NDWI agua mín.',    description: 'Agua: NDWI ≥ este valor' },
-  { key: 'ndvi_water_max',  label: 'NDVI agua máx.',    description: 'Agua: NDVI ≤ este valor' },
-  { key: 'bsi_mining_min',  label: 'BSI minería mín.',  description: 'Minería: BSI ≥ este valor' },
-  { key: 'ndvi_mining_max', label: 'NDVI minería máx.', description: 'Minería: NDVI ≤ este valor' },
+  swatch: string;
+  a: { index: string; key: ThresholdKey };
+  b: { index: string; key: ThresholdKey };
+}[] = [
+  { cls: 'vegetation', label: 'Vegetación', swatch: 'bg-veg',
+    a: { index: 'NDVI', key: 'ndvi_veg_min' }, b: { index: 'BSI', key: 'bsi_veg_max' } },
+  { cls: 'water', label: 'Agua', swatch: 'bg-water',
+    a: { index: 'NDWI', key: 'ndwi_water_min' }, b: { index: 'NDVI', key: 'ndvi_water_max' } },
+  { cls: 'mining', label: 'Suelo / minería', swatch: 'bg-soil',
+    a: { index: 'BSI', key: 'bsi_mining_min' }, b: { index: 'NDVI', key: 'ndvi_mining_max' } },
 ];
+
+const THRESHOLD_KEYS = RULES.flatMap(r => [r.a.key, r.b.key]);
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -136,7 +125,7 @@ export default function ClassifierPanel({ sessionId, onComplete }: ClassifierPan
     const errors: Partial<Record<ThresholdKey, string>> = {};
     const parsed: Partial<Record<ThresholdKey, number>> = {};
 
-    for (const { key } of THRESHOLD_FIELDS) {
+    for (const key of THRESHOLD_KEYS) {
       const n = parseThreshold(rawValues[key]);
       if (n === null) {
         errors[key] = 'Valor inválido. Rango: [-1.0, 1.0]';
@@ -263,325 +252,131 @@ export default function ClassifierPanel({ sessionId, onComplete }: ClassifierPan
     );
   };
 
-  // ── Render helpers ────────────────────────────────────────────────────────────
-
-  const renderStepIndicator = (step: WorkflowStep, label: string) => {
-    const statusMap: Record<WorkflowStep, StepStatus> = {
-      preview: previewStatus,
-      train:   trainStatus,
-      predict: predictStatus,
-    };
-    const s = statusMap[step];
-    return (
-      <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold ${
-        s === 'done'    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-        s === 'running' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
-        s === 'error'   ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
-                          'bg-zinc-800/60 text-zinc-600 border border-white/5'
-      }`}>
-        {s === 'done'    && <CheckCircle2 className="w-3 h-3" />}
-        {s === 'running' && <Loader2 className="w-3 h-3 animate-spin" />}
-        {s === 'error'   && <AlertCircle className="w-3 h-3" />}
-        {s === 'idle'    && <ChevronRight className="w-3 h-3" />}
-        {label}
-      </div>
-    );
-  };
-
   // ── Render ────────────────────────────────────────────────────────────────────
 
+  const ruleInput = (key: ThresholdKey, label: string) => (
+    <span className="inline-flex flex-col">
+      <label className="sr-only" htmlFor={key}>{label}</label>
+      <input
+        id={key}
+        type="number"
+        step={0.01}
+        min={-1}
+        max={1}
+        value={rawValues[key]}
+        onChange={e => handleInputChange(key, e.target.value)}
+        aria-invalid={!!inputErrors[key]}
+        className="field figure !w-[5.5rem] !py-1.5 text-center"
+      />
+    </span>
+  );
+
+  const counts: Record<string, number | undefined> = {
+    vegetation: previewResult?.vegetation,
+    water: previewResult?.water,
+    mining: previewResult?.mining,
+  };
+
   return (
-    <div className="w-full max-w-3xl mx-auto animate-fade-in space-y-6">
-
-      {/* ── Workflow progress indicators ── */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {renderStepIndicator('preview', 'Previsualizar')}
-        <ChevronRight className="w-3 h-3 text-zinc-700" />
-        {renderStepIndicator('train', 'Entrenar')}
-        <ChevronRight className="w-3 h-3 text-zinc-700" />
-        {renderStepIndicator('predict', 'Predecir')}
-      </div>
-
-      {/* ── Threshold inputs ── */}
-      <div className="bg-zinc-900/40 rounded-2xl border border-white/5 p-6">
-        <div className="flex items-center gap-3 mb-5">
-          <div className="p-2 bg-purple-500/10 rounded-lg border border-purple-500/20">
-            <Cpu className="w-4 h-4 text-purple-400" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-zinc-200">Reglas de pseudo-etiquetado</h3>
-            <p className="text-xs text-zinc-500">Rango [-1.0, 1.0] · 2 decimales · valores por defecto del notebook</p>
-          </div>
+    <div className="space-y-6">
+      {/* ── Reglas de pseudo-etiquetado ── */}
+      <section className="sheet" aria-labelledby="rules-title">
+        <div className="px-4 pt-4 pb-3 border-b border-rule">
+          <h2 id="rules-title" className="font-serif text-xl font-semibold">Reglas de etiquetado</h2>
+          <p className="text-sm text-ink-2 mt-1 max-w-[70ch]">
+            Los píxeles que cumplen exactamente una regla sirven de ejemplo para entrenar el modelo; los que
+            cumplen varias se descartan por ambiguos. Valores entre −1 y 1.
+          </p>
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {THRESHOLD_FIELDS.map(({ key, label, description }) => (
-            <div key={key}>
-              <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">
-                {label}
-              </label>
-              <p className="text-[10px] text-zinc-600 mb-2">{description}</p>
-              <input
-                type="number"
-                min={-1.0}
-                max={1.0}
-                step={0.01}
-                value={rawValues[key]}
-                onChange={e => handleInputChange(key, e.target.value)}
-                className={`w-full bg-black/40 border rounded-xl px-3 py-2 text-sm font-mono text-zinc-200 focus:outline-none focus:ring-1 transition-colors ${
-                  inputErrors[key]
-                    ? 'border-red-500/50 focus:ring-red-500/30'
-                    : 'border-white/10 focus:ring-purple-500/30 focus:border-purple-500/40'
-                }`}
-              />
-              {inputErrors[key] && (
-                <p className="mt-1 text-[10px] text-red-400 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3 flex-shrink-0" />
-                  {inputErrors[key]}
-                </p>
+        <ul className="divide-y divide-rule">
+          {RULES.map(rule => (
+            <li key={rule.cls} className="px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+              <span className="flex items-center gap-2 w-40 font-semibold">
+                <span className={`w-3 h-3 rounded-[2px] ${rule.swatch}`} aria-hidden />
+                {rule.label}
+              </span>
+              <span className="flex flex-wrap items-center gap-2 text-ink-2">
+                si <span className="figure font-bold text-ink">{rule.a.index}</span> &gt; {ruleInput(rule.a.key, `${rule.label}: ${rule.a.index} mínimo`)}
+                y <span className="figure font-bold text-ink">{rule.b.index}</span> &lt; {ruleInput(rule.b.key, `${rule.label}: ${rule.b.index} máximo`)}
+              </span>
+              <span className="ml-auto text-sm text-right" aria-live="polite">
+                {counts[rule.cls] !== undefined && (
+                  <><span className="figure font-bold">{counts[rule.cls]!.toLocaleString('es-CO')}</span> <span className="text-muted">píxeles</span></>
+                )}
+              </span>
+              {(inputErrors[rule.a.key] || inputErrors[rule.b.key]) && (
+                <p className="w-full text-sm text-signal font-semibold">Usa valores entre −1 y 1 con hasta dos decimales.</p>
               )}
-            </div>
+            </li>
           ))}
-        </div>
-      </div>
-
-      {/* ── Step 1: Preview thresholds ── */}
-      <div className="bg-zinc-900/40 rounded-2xl border border-white/5 p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
-              <Eye className="w-4 h-4 text-yellow-400" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-zinc-200">Paso 1 — Previsualizar umbrales</h3>
-              <p className="text-xs text-zinc-500">Conteo de píxeles por clase sin entrenar el modelo</p>
-            </div>
-          </div>
-        </div>
-
-        <button
-          onClick={handlePreview}
-          disabled={!canPreview}
-          className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 active:scale-[0.98] ${
-            !canPreview
-              ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
-              : 'bg-yellow-600 hover:bg-yellow-500 text-white shadow-lg shadow-yellow-600/20'
-          }`}
-        >
-          {previewStatus === 'running' ? (
-            <><Loader2 className="w-4 h-4 animate-spin" /> Calculando…</>
-          ) : (
-            <><Eye className="w-4 h-4" /> Previsualizar umbrales</>
-          )}
-        </button>
-
-        {/* Preview error */}
-        {previewStatus === 'error' && previewError && (
-          <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
-            <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-red-400 font-medium">{previewError}</p>
-          </div>
-        )}
-
-        {/* Preview results */}
-        {previewStatus === 'done' && previewResult && (
-          <div className="animate-fade-in">
-            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">
-              Conteo de píxeles etiquetados
+        </ul>
+        <div className="px-4 py-3 border-t border-rule bg-paper-2 flex flex-wrap items-center gap-3">
+          <button onClick={handlePreview} disabled={!canPreview} className="btn btn-secondary">
+            {previewStatus === 'running' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+            Contar píxeles
+          </button>
+          {previewResult && (
+            <p className="text-sm text-ink-2">
+              De <span className="figure">{previewResult.total_valid.toLocaleString('es-CO')}</span> píxeles despejados
+              {previewResult.ambiguous > 0 && (
+                <>; <span className="figure">{previewResult.ambiguous.toLocaleString('es-CO')}</span> ambiguos descartados (p. ej. ríos con sedimento)</>
+              )}.
             </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="bg-black/30 rounded-xl p-3 text-center">
-                <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Total válidos</p>
-                <p className="text-lg font-mono font-bold text-zinc-200">
-                  {previewResult.total_valid.toLocaleString()}
-                </p>
-              </div>
-              <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-xl p-3 text-center">
-                <div className="flex items-center justify-center gap-1 mb-1">
-                  <Leaf className="w-3 h-3 text-emerald-400" />
-                  <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">Vegetación</p>
-                </div>
-                <p className="text-lg font-mono font-bold text-emerald-400">
-                  {previewResult.vegetation.toLocaleString()}
-                </p>
-              </div>
-              <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-3 text-center">
-                <div className="flex items-center justify-center gap-1 mb-1">
-                  <Droplets className="w-3 h-3 text-blue-400" />
-                  <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest">Agua</p>
-                </div>
-                <p className="text-lg font-mono font-bold text-blue-400">
-                  {previewResult.water.toLocaleString()}
-                </p>
-              </div>
-              <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3 text-center">
-                <div className="flex items-center justify-center gap-1 mb-1">
-                  <Mountain className="w-3 h-3 text-amber-400" />
-                  <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">Minería</p>
-                </div>
-                <p className="text-lg font-mono font-bold text-amber-400">
-                  {previewResult.mining.toLocaleString()}
-                </p>
-              </div>
-            </div>
-            {previewResult.ambiguous > 0 && (
-              <p className="flex items-start gap-2 mt-3 text-xs text-zinc-400">
-                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-amber-400" />
-                <span>
-                  <b className="font-mono text-zinc-200">{previewResult.ambiguous.toLocaleString()}</b> píxeles
-                  cumplen más de una regla (p. ej. ríos con sedimento: agua y suelo a la vez) y se descartan del
-                  entrenamiento por ambiguos.
-                </span>
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ── Step 2: Train model ── */}
-      <div className={`bg-zinc-900/40 rounded-2xl border p-6 space-y-4 transition-colors ${
-        canTrain ? 'border-white/5' : 'border-white/[0.02] opacity-60'
-      }`}>
-        <div className="flex items-center gap-3">
-          <div className={`p-2 rounded-lg border ${
-            canTrain ? 'bg-purple-500/10 border-purple-500/20' : 'bg-zinc-800/40 border-white/5'
-          }`}>
-            <Play className={`w-4 h-4 ${canTrain ? 'text-purple-400' : 'text-zinc-600'}`} />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-zinc-200">Paso 2 — Entrenar modelo</h3>
-            <p className="text-xs text-zinc-500">Random Forest · 150 árboles · 16 variables · validación hold-out + OOB</p>
-          </div>
-        </div>
-
-        <button
-          onClick={handleTrain}
-          disabled={!canTrain}
-          className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 active:scale-[0.98] ${
-            !canTrain
-              ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
-              : 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-600/20'
-          }`}
-        >
-          {trainStatus === 'running' ? (
-            <><Loader2 className="w-4 h-4 animate-spin" /> Entrenando…</>
-          ) : (
-            <><Play className="w-4 h-4" /> Entrenar modelo</>
           )}
-        </button>
-
-        {/* Train progress + logs */}
-        {(trainStatus === 'running' || trainStatus === 'done' || trainStatus === 'error') && (
-          <div className="space-y-4">
-            <div className="bg-black/20 rounded-xl border border-white/5 p-4">
-              <div className="flex items-center gap-2 mb-3">
-                {trainStatus === 'running' && <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />}
-                {trainStatus === 'done'    && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                {trainStatus === 'error'   && <AlertCircle className="w-4 h-4 text-red-400" />}
-                <span className="text-sm font-bold text-zinc-300">
-                  {trainStatus === 'running' && 'Entrenando clasificador…'}
-                  {trainStatus === 'done'    && 'Entrenamiento completado'}
-                  {trainStatus === 'error'   && 'Error en el entrenamiento'}
-                </span>
-              </div>
-              <ProgressBar
-                progress={trainProgress}
-                label={trainStatus === 'running' ? 'Progreso' : undefined}
-              />
-            </div>
-
-            {trainStatus === 'error' && trainError && (
-              <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
-                <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-400 font-medium">{trainError}</p>
-              </div>
-            )}
-
-            {trainStatus === 'done' && metrics && <ClassifierMetrics metrics={metrics} />}
-
-            {trainStatus === 'done' && !metrics && oobScore !== null && (
-              <div className="flex items-center gap-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl px-4 py-3 animate-fade-in">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                <div>
-                  <p className="text-xs font-bold text-zinc-400 uppercase tracking-widest">OOB Accuracy</p>
-                  <p className="text-2xl font-mono font-bold text-emerald-400">
-                    {(oobScore * 100).toFixed(2)} %
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <LogConsole lines={trainLogs} />
-          </div>
-        )}
-      </div>
-
-      {/* ── Step 3: Predict map ── */}
-      <div className={`bg-zinc-900/40 rounded-2xl border p-6 space-y-4 transition-colors ${
-        canPredict ? 'border-white/5' : 'border-white/[0.02] opacity-60'
-      }`}>
-        <div className="flex items-center gap-3">
-          <div className={`p-2 rounded-lg border ${
-            canPredict ? 'bg-teal-500/10 border-teal-500/20' : 'bg-zinc-800/40 border-white/5'
-          }`}>
-            <Map className={`w-4 h-4 ${canPredict ? 'text-teal-400' : 'text-zinc-600'}`} />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-zinc-200">Paso 3 — Predecir mapa</h3>
-            <p className="text-xs text-zinc-500">Clasifica todos los píxeles válidos de la escena</p>
-          </div>
-        </div>
-
-        <button
-          onClick={handlePredict}
-          disabled={!canPredict}
-          className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 active:scale-[0.98] ${
-            !canPredict
-              ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
-              : 'bg-teal-600 hover:bg-teal-500 text-white shadow-lg shadow-teal-600/20'
-          }`}
-        >
-          {predictStatus === 'running' ? (
-            <><Loader2 className="w-4 h-4 animate-spin" /> Prediciendo…</>
-          ) : predictStatus === 'done' ? (
-            <><CheckCircle2 className="w-4 h-4" /> Predicción completada</>
-          ) : (
-            <><Map className="w-4 h-4" /> Predecir mapa</>
+          {previewStatus === 'error' && previewError && (
+            <p role="alert" className="text-sm text-signal">{previewError}</p>
           )}
-        </button>
+        </div>
+      </section>
 
-        {/* Predict progress + logs */}
-        {(predictStatus === 'running' || predictStatus === 'done' || predictStatus === 'error') && (
-          <div className="space-y-4">
-            <div className="bg-black/20 rounded-xl border border-white/5 p-4">
-              <div className="flex items-center gap-2 mb-3">
-                {predictStatus === 'running' && <Loader2 className="w-4 h-4 text-teal-400 animate-spin" />}
-                {predictStatus === 'done'    && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                {predictStatus === 'error'   && <AlertCircle className="w-4 h-4 text-red-400" />}
-                <span className="text-sm font-bold text-zinc-300">
-                  {predictStatus === 'running' && 'Clasificando píxeles…'}
-                  {predictStatus === 'done'    && 'Mapa generado — avanzando al paso 5…'}
-                  {predictStatus === 'error'   && 'Error en la predicción'}
-                </span>
-              </div>
-              <ProgressBar
-                progress={predictProgress}
-                label={predictStatus === 'running' ? 'Progreso' : undefined}
-              />
-            </div>
-
-            {predictStatus === 'error' && predictError && (
-              <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
-                <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-400 font-medium">{predictError}</p>
-              </div>
-            )}
-
-            <LogConsole lines={predictLogs} />
+      {/* ── Entrenar ── */}
+      <section className="space-y-4" aria-labelledby="train-title">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 id="train-title" className="font-serif text-xl font-semibold">Entrenar el Random Forest</h2>
+            <p className="text-sm text-ink-2 mt-1">150 árboles sobre 16 variables (7 índices y 9 bandas), validado con un 25 % reservado.</p>
           </div>
+          <button onClick={handleTrain} disabled={!canTrain} className="btn btn-primary">
+            {trainStatus === 'running' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+            {trainStatus === 'done' ? 'Volver a entrenar' : 'Entrenar modelo'}
+          </button>
+        </div>
+        {previewStatus !== 'done' && trainStatus === 'idle' && (
+          <p className="text-sm text-muted">Primero cuenta los píxeles para revisar que cada clase tenga ejemplos.</p>
         )}
-      </div>
+        <TaskProgress
+          status={trainStatus}
+          progress={trainProgress}
+          lines={trainLogs}
+          error={trainError}
+          titles={{ running: 'Entrenando el modelo…', done: 'Modelo entrenado', error: 'No se pudo entrenar el modelo' }}
+        />
+        {trainStatus === 'done' && metrics && <ClassifierMetrics metrics={metrics} />}
+        {trainStatus === 'done' && !metrics && oobScore !== null && (
+          <p className="text-sm">OOB <span className="figure font-bold">{(oobScore * 100).toFixed(2)} %</span></p>
+        )}
+      </section>
 
+      {/* ── Clasificar ── */}
+      <section className="space-y-4 border-t border-rule pt-6" aria-labelledby="predict-title">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 id="predict-title" className="font-serif text-xl font-semibold">Clasificar la escena</h2>
+            <p className="text-sm text-ink-2 mt-1">Aplica el modelo a todos los píxeles despejados y abre el mapa.</p>
+          </div>
+          <button onClick={handlePredict} disabled={!canPredict} className="btn btn-primary">
+            {predictStatus === 'running' ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapIcon className="w-4 h-4" />}
+            Clasificar y ver el mapa
+          </button>
+        </div>
+        <TaskProgress
+          status={predictStatus}
+          progress={predictProgress}
+          lines={predictLogs}
+          error={predictError}
+          titles={{ running: 'Clasificando píxeles…', done: 'Mapa listo', error: 'No se pudo clasificar la escena' }}
+        />
+      </section>
     </div>
   );
 }

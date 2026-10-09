@@ -5,32 +5,24 @@ interface ProgressBarProps {
 
 export default function ProgressBar({ progress, label }: ProgressBarProps) {
   const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100);
-
-  // Color shifts from blue → emerald when done
-  const barColor =
-    pct >= 100
-      ? 'bg-emerald-500 shadow-emerald-500/30'
-      : 'bg-blue-500 shadow-blue-500/30';
-
-  const textColor = pct >= 100 ? 'text-emerald-400' : 'text-blue-400';
-
   return (
     <div className="w-full">
-      {(label || pct > 0) && (
-        <div className="flex items-center justify-between mb-2">
-          {label && (
-            <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">
-              {label}
-            </span>
-          )}
-          <span className={`text-xs font-mono font-bold ml-auto ${textColor}`}>
-            {pct}%
-          </span>
+      {label && (
+        <div className="flex items-baseline justify-between mb-1.5 text-sm">
+          <span className="text-ink-2">{label}</span>
+          <span className="figure font-bold">{pct} %</span>
         </div>
       )}
-      <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden border border-white/5">
+      <div
+        className="w-full h-1.5 bg-paper-2 border border-rule rounded-full overflow-hidden"
+        role="progressbar"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={label}
+      >
         <div
-          className={`h-full rounded-full shadow-lg transition-all duration-300 ease-out ${barColor}`}
+          className={`h-full rounded-full transition-[width] duration-300 ease-out ${pct >= 100 ? 'bg-veg' : 'bg-stamp'}`}
           style={{ width: `${pct}%` }}
         />
       </div>

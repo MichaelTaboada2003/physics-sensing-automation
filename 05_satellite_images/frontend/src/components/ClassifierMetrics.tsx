@@ -2,52 +2,46 @@ import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recha
 import { Info } from 'lucide-react';
 import type { ClassifierMetrics as Metrics } from '../types';
 
-// Tono secuencial (un solo matiz, claro → oscuro) para la matriz de confusión
-const cellBg = (share: number) => `rgba(16, 185, 129, ${0.08 + 0.72 * share})`;
+// Rampa secuencial de un solo matiz (sello violeta), clara → oscura
+const cellBg = (share: number) => `rgb(90 74 156 / ${0.06 + 0.8 * share})`;
 
-const pct = (v?: number) => (v === undefined ? '—' : `${(v * 100).toFixed(1)} %`);
-
-function Stat({ label, value, hint }: { label: string; value: string; hint: string }) {
-  return (
-    <div className="bg-black/30 rounded-xl p-4 border border-white/5" title={hint}>
-      <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">{label}</p>
-      <p className="text-xl font-mono font-bold text-zinc-100">{value}</p>
-    </div>
-  );
-}
+const pct = (v?: number) =>
+  v === undefined ? '—' : `${(v * 100).toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
 
 export default function ClassifierMetrics({ metrics }: { metrics: Metrics }) {
   const cm = metrics.confusion_matrix;
   const importances = metrics.feature_importances.slice(0, 10);
 
   return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Stat label="Exactitud (hold-out)" value={pct(metrics.accuracy)} hint="Acierto sobre el 25 % de píxeles reservados" />
-        <Stat label="Kappa de Cohen" value={metrics.kappa?.toFixed(3) ?? '—'} hint="Acuerdo corregido por azar (1 = perfecto)" />
-        <Stat label="OOB" value={pct(metrics.oob_score)} hint="Out-of-bag: acierto de cada árbol en las muestras que no vio" />
-        <Stat
-          label="Muestras"
-          value={`${metrics.n_train.toLocaleString('es-ES')}`}
-          hint={`${metrics.n_train} de entrenamiento · ${metrics.n_test} de validación`}
-        />
-      </div>
+    <div className="space-y-4 animate-fade-in">
+      <dl className="sheet grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-rule text-sm">
+        {[
+          ['Exactitud', pct(metrics.accuracy), 'Acierto sobre el 25 % de píxeles reservados'],
+          ['Kappa de Cohen', metrics.kappa?.toLocaleString('es-CO', { minimumFractionDigits: 3 }) ?? '—', 'Acuerdo corregido por azar (1 = perfecto)'],
+          ['OOB', pct(metrics.oob_score), 'Acierto de cada árbol en las muestras que no vio'],
+          ['Muestras', `${metrics.n_train.toLocaleString('es-CO')} + ${metrics.n_test.toLocaleString('es-CO')}`, 'Entrenamiento + validación'],
+        ].map(([label, value, hint]) => (
+          <div key={label} className="px-4 py-3" title={hint}>
+            <dt className="text-ink-2">{label}</dt>
+            <dd className="figure font-bold text-base mt-0.5">{value}</dd>
+          </div>
+        ))}
+      </dl>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Confusion matrix */}
+      <div className="grid gap-4 lg:grid-cols-2">
         {cm && (
-          <div className="bg-black/20 rounded-xl border border-white/5 p-4 overflow-x-auto">
-            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">
-              Matriz de confusión (filas = pseudo-etiqueta, columnas = predicción)
-            </p>
-            <table className="w-full text-xs font-mono border-separate border-spacing-0.5">
+          <figure className="sheet p-4 overflow-x-auto">
+            <figcaption className="text-sm font-semibold mb-3">
+              Matriz de confusión <span className="font-normal text-muted">(filas: etiqueta · columnas: predicción)</span>
+            </figcaption>
+            <table className="w-full text-sm border-separate border-spacing-[2px]">
               <thead>
                 <tr>
                   <th />
                   {metrics.classes.map(c => (
-                    <th key={c} className="text-zinc-500 font-bold pb-1 font-sans">{c}</th>
+                    <th key={c} scope="col" className="font-semibold text-ink-2 pb-1 text-center">{c}</th>
                   ))}
-                  <th className="text-zinc-500 font-bold pb-1 font-sans">Recall</th>
+                  <th scope="col" className="font-semibold text-ink-2 pb-1 text-center">Recall</th>
                 </tr>
               </thead>
               <tbody>
@@ -55,40 +49,37 @@ export default function ClassifierMetrics({ metrics }: { metrics: Metrics }) {
                   const total = row.reduce((a, b) => a + b, 0) || 1;
                   return (
                     <tr key={i}>
-                      <th className="text-left text-zinc-400 font-sans font-bold pr-2">{metrics.classes[i]}</th>
+                      <th scope="row" className="text-left font-semibold text-ink-2 pr-2">{metrics.classes[i]}</th>
                       {row.map((v, j) => (
                         <td
                           key={j}
-                          title={`${metrics.classes[i]} → ${metrics.classes[j]}: ${v} píxeles (${((v / total) * 100).toFixed(1)} %)`}
-                          className={`text-center py-2 rounded ${v / total > 0.55 ? 'text-white' : 'text-zinc-300'}`}
+                          title={`${metrics.classes[i]} → ${metrics.classes[j]}: ${v} píxeles (${((v / total) * 100).toLocaleString('es-CO', { maximumFractionDigits: 1 })} %)`}
+                          className={`figure text-center py-2 rounded-[3px] ${v / total > 0.5 ? 'text-white font-bold' : 'text-ink'}`}
                           style={{ background: cellBg(v / total) }}
                         >
-                          {v.toLocaleString('es-ES')}
+                          {v.toLocaleString('es-CO')}
                         </td>
                       ))}
-                      <td className="text-center text-zinc-300">{pct(metrics.per_class?.[i]?.recall)}</td>
+                      <td className="figure text-center">{pct(metrics.per_class?.[i]?.recall)}</td>
                     </tr>
                   );
                 })}
                 <tr>
-                  <th className="text-left text-zinc-500 font-sans font-bold pr-2 pt-1">Precisión</th>
+                  <th scope="row" className="text-left font-semibold text-ink-2 pr-2 pt-1">Precisión</th>
                   {metrics.per_class?.map(c => (
-                    <td key={c.class} className="text-center text-zinc-300 pt-1">{pct(c.precision)}</td>
+                    <td key={c.class} className="figure text-center pt-1">{pct(c.precision)}</td>
                   ))}
                   <td />
                 </tr>
               </tbody>
             </table>
-          </div>
+          </figure>
         )}
 
-        {/* Feature importance */}
-        <div className="bg-black/20 rounded-xl border border-white/5 p-4">
-          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">
-            Importancia de variables (top 10)
-          </p>
-          <ResponsiveContainer width="100%" height={importances.length * 24 + 10}>
-            <BarChart data={importances} layout="vertical" margin={{ left: 0, right: 16, top: 0, bottom: 0 }} barCategoryGap={2}>
+        <figure className="sheet p-4">
+          <figcaption className="text-sm font-semibold mb-3">Importancia de las variables</figcaption>
+          <ResponsiveContainer width="100%" height={importances.length * 26 + 8}>
+            <BarChart data={importances} layout="vertical" margin={{ left: 0, right: 16, top: 0, bottom: 0 }} barCategoryGap={3}>
               <XAxis type="number" hide domain={[0, 'dataMax']} />
               <YAxis
                 type="category"
@@ -96,25 +87,25 @@ export default function ClassifierMetrics({ metrics }: { metrics: Metrics }) {
                 width={56}
                 tickLine={false}
                 axisLine={false}
-                tick={{ fill: '#a1a1aa', fontSize: 11, fontFamily: 'monospace' }}
+                tick={{ fill: '#3d4856', fontSize: 12, fontFamily: 'Courier Prime, monospace' }}
               />
               <Tooltip
-                cursor={{ fill: 'rgba(255,255,255,0.04)' }}
-                contentStyle={{ background: '#18181b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
-                labelStyle={{ color: '#e4e4e7' }}
-                itemStyle={{ color: '#d4d4d8' }}
-                formatter={(v) => [`${(Number(v) * 100).toFixed(1)} %`, 'Importancia']}
+                cursor={{ fill: 'rgb(27 36 48 / 0.04)' }}
+                contentStyle={{ background: '#fbfcf8', border: '1px solid #cdd3c8', borderRadius: 4, fontSize: 13 }}
+                labelStyle={{ color: '#1b2430', fontWeight: 700 }}
+                itemStyle={{ color: '#3d4856' }}
+                formatter={(v) => [pct(Number(v)), 'Importancia']}
               />
-              <Bar dataKey="importance" fill="#10b981" radius={[0, 4, 4, 0]} isAnimationActive={false} />
+              <Bar dataKey="importance" fill="#5a4a9c" radius={[0, 3, 3, 0]} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
-        </div>
+        </figure>
       </div>
 
-      <p className="flex items-start gap-2 text-xs text-zinc-500">
-        <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-        La validación mide el acuerdo con las pseudo-etiquetas generadas por umbrales, no con datos de campo:
-        valores cercanos al 100 % indican que el modelo reproduce las reglas, no que el mapa sea perfecto.
+      <p className="flex items-start gap-2 text-sm text-ink-2 max-w-[75ch]">
+        <Info className="w-4 h-4 shrink-0 mt-0.5 text-muted" />
+        La validación compara con las etiquetas de las reglas, no con datos de campo. Valores cercanos al 100 %
+        significan que el modelo reproduce las reglas, no que el mapa sea perfecto.
       </p>
     </div>
   );

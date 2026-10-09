@@ -66,6 +66,7 @@ const STEPS: { id: AppStep; label: string; title: string; purpose: string }[] = 
 
 function App() {
   const [state, setState] = useState<AppState>(INITIAL_STATE);
+  const [bandsTick, setBandsTick] = useState(0);
 
   const goTo = (step: AppStep) =>
     setState(prev => ({ ...prev, step, reached: (Math.max(prev.reached, step) as AppStep) }));
@@ -97,7 +98,7 @@ function App() {
 
   const current = STEPS[state.step - 1];
   // La etiqueta se actualiza al cambiar de paso (nubes tras la descarga, clases tras clasificar)
-  const stats = useMapStats(state.sessionId, `${state.step}-${state.mapReady}`);
+  const stats = useMapStats(state.sessionId, `${state.step}-${state.mapReady}-${bandsTick}`);
   const showSideLabel = state.zone && state.step >= 2 && state.step <= 4;
 
   return (
@@ -191,7 +192,12 @@ function App() {
           {state.step === 1 && <SearchPanel onSearchComplete={handleSearchComplete} />}
 
           {state.step === 2 && state.sessionId && state.sceneInfo && (
-            <BandsPanel sessionId={state.sessionId} sceneInfo={state.sceneInfo} onComplete={() => goTo(3)} />
+            <BandsPanel
+              sessionId={state.sessionId}
+              sceneInfo={state.sceneInfo}
+              onComplete={() => goTo(3)}
+              onDownloaded={() => setBandsTick(t => t + 1)}
+            />
           )}
 
           {state.step === 3 && state.sessionId && state.sceneInfo && (
