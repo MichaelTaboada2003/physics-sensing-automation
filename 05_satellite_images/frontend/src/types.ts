@@ -21,6 +21,12 @@ export interface SearchRequest {
 
 export type BBox = [number, number, number, number];
 
+/** Zona analizada: nombre (zona de ejemplo o «Zona personalizada») y bbox. */
+export interface Zone {
+  name: string;
+  bbox: BBox;
+}
+
 export interface SceneCandidate {
   id: string;
   datetime: string;

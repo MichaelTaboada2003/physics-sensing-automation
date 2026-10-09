@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Search, AlertCircle, Loader2, MapPin, Calendar, Cloud, Images, ArrowRight } from 'lucide-react';
-import type { BBox, SceneCandidate, ScenesResponse, SearchResponse } from '../types';
+import { Search, AlertCircle, Loader2, ArrowRight } from 'lucide-react';
+import type { BBox, SceneCandidate, ScenesResponse, SearchResponse, Zone } from '../types';
 import { MAX_AREA_KM2, PRESETS, bboxInRegion, bboxIsTooLarge } from '../lib/geo';
 import type { Region } from '../lib/geo';
 import { useRegion } from '../hooks/useRegion';
@@ -108,8 +108,8 @@ function validateForm(
 
 function ErrorMsg({ msg }: { msg?: string }) {
   return msg ? (
-    <p className="mt-1.5 flex items-center gap-1.5 text-xs text-red-400 font-medium">
-      <AlertCircle className="w-3 h-3 flex-shrink-0" />
+    <p className="mt-1 flex items-center gap-1.5 text-sm text-signal font-semibold">
+      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
       {msg}
     </p>
   ) : null;
@@ -118,7 +118,7 @@ function ErrorMsg({ msg }: { msg?: string }) {
 // ── Props ──────────────────────────────────────────────────────────────────────
 
 interface SearchPanelProps {
-  onSearchComplete: (response: SearchResponse) => void;
+  onSearchComplete: (response: SearchResponse, zone: Zone) => void;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -142,6 +142,8 @@ export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
   const [candidates, setCandidates] = useState<{ searchId: string; scenes: SceneCandidate[] } | null>(null);
   const [selectedId, setSelectedId] = useState<string>('');
   const [confirming, setConfirming] = useState(false);
+  const [zoneName, setZoneName] = useState<string>(PRESETS[0].name);
+  const [focus, setFocus] = useState<{ bbox: BBox; n: number } | undefined>(undefined);
 
   const currentBBox = (): BBox | null => {
     const b = [lonMin, latMin, lonMax, latMax].map(parseFloat) as BBox;
@@ -222,7 +224,7 @@ export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
         return;
       }
       const data: SearchResponse = await res.json();
-      onSearchComplete(data);
+      onSearchComplete(data, { name: zoneName, bbox: requestBody().bbox });
     } catch (err: unknown) {
       setApiError(err instanceof Error ? err.message : 'Error de red al conectar con el servidor.');
     } finally {
@@ -253,271 +255,224 @@ export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
   // ── Render helpers ───────────────────────────────────────────────────────────
 
   const hasErrors = Object.keys(errors).length > 0;
+  const startYear = dateStart.slice(0, 4);
+  const isFullYear = dateStart.endsWith('-01-01') && dateEnd === `${startYear}-12-31`;
+  const selectedYear = isFullYear ? Number(startYear) : null;
 
-  const inputClass = (hasError: boolean) =>
-    `w-full bg-zinc-900/60 border ${
-      hasError ? 'border-red-500/60 focus:border-red-500' : 'border-white/10 focus:border-emerald-500/50'
-    } rounded-xl px-4 py-3 text-sm outline-none transition-all font-mono text-zinc-200 placeholder-zinc-600`;
+  const pickYear = (y: number) => {
+    setDateStart(`${y}-01-01`);
+    setDateEnd(`${y}-12-31`);
+    setCandidates(null);
+    revalidate({ dateStart: `${y}-01-01`, dateEnd: `${y}-12-31` });
+  };
 
+  const pickPreset = (p: (typeof PRESETS)[number]) => {
+    setBBox(p.bbox);
+    setZoneName(p.name);
+    setFocus(f => ({ bbox: p.bbox, n: (f?.n ?? 0) + 1 }));
+  };
+
+  const selected = candidates?.scenes.find(c => c.id === selectedId);
 
   // ── JSX ──────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="w-full max-w-4xl mx-auto animate-fade-in">
-      <form onSubmit={handleSubmit} noValidate className="space-y-6">
+    <div className="space-y-6">
+      <form onSubmit={handleSubmit} noValidate className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
 
-        {/* ── Bounding Box ── */}
-        <div className="bg-zinc-900/40 rounded-2xl border border-white/5 p-6">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="p-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
-              <MapPin className="w-4 h-4 text-emerald-500" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-zinc-200">Zona de interés</h3>
-              <p className="text-xs text-zinc-500">Dibuja un rectángulo, elige una zona de ejemplo o edita las coordenadas EPSG:4326</p>
-            </div>
-          </div>
-
-          <AoiMap bbox={currentBBox()} onChange={setBBox} />
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-5">
-            {/* lon_min */}
-            <div>
-              <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase tracking-widest">
-                lon_min
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={lonMin}
-                onChange={e => { setLonMin(e.target.value); revalidate({ lonMin: e.target.value }); }}
-                className={inputClass(!!errors.lonMin)}
-                placeholder="-180 … 180"
-              />
-              <ErrorMsg msg={errors.lonMin} />
-            </div>
-
-            {/* lat_min */}
-            <div>
-              <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase tracking-widest">
-                lat_min
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={latMin}
-                onChange={e => { setLatMin(e.target.value); revalidate({ latMin: e.target.value }); }}
-                className={inputClass(!!errors.latMin)}
-                placeholder="-90 … 90"
-              />
-              <ErrorMsg msg={errors.latMin} />
-            </div>
-
-            {/* lon_max */}
-            <div>
-              <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase tracking-widest">
-                lon_max
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={lonMax}
-                onChange={e => { setLonMax(e.target.value); revalidate({ lonMax: e.target.value }); }}
-                className={inputClass(!!errors.lonMax)}
-                placeholder="-180 … 180"
-              />
-              <ErrorMsg msg={errors.lonMax} />
-            </div>
-
-            {/* lat_max */}
-            <div>
-              <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase tracking-widest">
-                lat_max
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={latMax}
-                onChange={e => { setLatMax(e.target.value); revalidate({ latMax: e.target.value }); }}
-                className={inputClass(!!errors.latMax)}
-                placeholder="-90 … 90"
-              />
-              <ErrorMsg msg={errors.latMax} />
-            </div>
-          </div>
-
-          {/* Relational bbox error */}
+        {/* ── Mapa ── */}
+        <div className="min-w-0">
+          <AoiMap
+            bbox={currentBBox()}
+            onChange={b => { setBBox(b); setZoneName('Zona personalizada'); }}
+            focus={focus}
+          />
           {errors.bboxRelation && (
-            <p className="mt-3 flex items-center gap-1.5 text-xs text-red-400 font-medium">
-              <AlertCircle className="w-3 h-3 flex-shrink-0" />
+            <p className="mt-2 flex items-center gap-1.5 text-sm text-signal font-semibold">
+              <AlertCircle className="w-4 h-4 shrink-0" />
               {errors.bboxRelation}
             </p>
           )}
+
+          <details className="mt-3 group">
+            <summary className="cursor-pointer text-sm font-semibold text-ink-2 hover:text-ink select-none">
+              Coordenadas exactas (EPSG:4326)
+            </summary>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+              {([
+                ['lonMin', 'Longitud oeste', lonMin, setLonMin],
+                ['latMin', 'Latitud sur', latMin, setLatMin],
+                ['lonMax', 'Longitud este', lonMax, setLonMax],
+                ['latMax', 'Latitud norte', latMax, setLatMax],
+              ] as const).map(([key, label, value, setter]) => (
+                <div key={key}>
+                  <label className="field-label mb-1" htmlFor={key}>{label}</label>
+                  <input
+                    id={key}
+                    type="number"
+                    step="any"
+                    value={value}
+                    aria-invalid={!!errors[key]}
+                    onChange={e => {
+                      setter(e.target.value);
+                      setCandidates(null);
+                      setZoneName('Zona personalizada');
+                      revalidate({ [key]: e.target.value });
+                    }}
+                    className="field figure"
+                  />
+                  <ErrorMsg msg={errors[key]} />
+                </div>
+              ))}
+            </div>
+          </details>
         </div>
 
-        {/* ── Time Range ── */}
-        <div className="bg-zinc-900/40 rounded-2xl border border-white/5 p-6">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="p-2 bg-blue-500/10 rounded-lg border border-blue-500/20">
-              <Calendar className="w-4 h-4 text-blue-400" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-zinc-200">Rango Temporal</h3>
-              <p className="text-xs text-zinc-500">Formato YYYY-MM-DD</p>
-            </div>
-          </div>
+        {/* ── Columna de parámetros ── */}
+        <div className="space-y-5">
+          <fieldset>
+            <legend className="field-label mb-2">Zonas de ejemplo</legend>
+            <ul className="sheet divide-y divide-rule overflow-hidden">
+              {PRESETS.map(p => {
+                const active = zoneName === p.name;
+                return (
+                  <li key={p.name}>
+                    <button
+                      type="button"
+                      onClick={() => pickPreset(p)}
+                      aria-pressed={active}
+                      className={`w-full text-left px-3.5 py-2.5 transition-colors ${
+                        active ? 'bg-stamp-tint' : 'hover:bg-paper-2'
+                      }`}
+                    >
+                      <span className={`block text-[0.9375rem] font-semibold ${active ? 'text-stamp-2' : 'text-ink'}`}>
+                        {p.name}
+                      </span>
+                      <span className="block text-sm text-muted">{p.description}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </fieldset>
 
-          <div className="grid grid-cols-2 gap-4">
-            {/* Date start */}
-            <div>
-              <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase tracking-widest">
-                Fecha inicio
-              </label>
-              <input
-                type="date"
-                value={dateStart}
-                onChange={e => { setDateStart(e.target.value); setCandidates(null); revalidate({ dateStart: e.target.value }); }}
-                className={inputClass(!!errors.dateStart)}
-              />
-              <ErrorMsg msg={errors.dateStart} />
+          <fieldset>
+            <legend className="field-label mb-2">Año de la imagen</legend>
+            <div className="segmented w-full">
+              {[0, 1, 2, 3].map(k => {
+                const y = LAST_YEAR + 1 - k;
+                return (
+                  <button
+                    key={y}
+                    type="button"
+                    onClick={() => pickYear(y)}
+                    aria-pressed={selectedYear === y}
+                    className="figure flex-1"
+                  >
+                    {y}
+                  </button>
+                );
+              })}
             </div>
+            <details className="mt-2" open={!isFullYear}>
+              <summary className="cursor-pointer text-sm font-semibold text-ink-2 hover:text-ink select-none">
+                Otro rango de fechas
+              </summary>
+              <div className="grid grid-cols-2 gap-3 mt-2">
+                <div>
+                  <label className="field-label mb-1" htmlFor="date-start">Desde</label>
+                  <input
+                    id="date-start"
+                    type="date"
+                    value={dateStart}
+                    aria-invalid={!!errors.dateStart}
+                    onChange={e => { setDateStart(e.target.value); setCandidates(null); revalidate({ dateStart: e.target.value }); }}
+                    className="field figure"
+                  />
+                  <ErrorMsg msg={errors.dateStart} />
+                </div>
+                <div>
+                  <label className="field-label mb-1" htmlFor="date-end">Hasta</label>
+                  <input
+                    id="date-end"
+                    type="date"
+                    value={dateEnd}
+                    aria-invalid={!!errors.dateEnd}
+                    onChange={e => { setDateEnd(e.target.value); setCandidates(null); revalidate({ dateEnd: e.target.value }); }}
+                    className="field figure"
+                  />
+                  <ErrorMsg msg={errors.dateEnd} />
+                </div>
+              </div>
+              <ErrorMsg msg={errors.dateRelation} />
+            </details>
+          </fieldset>
 
-            {/* Date end */}
-            <div>
-              <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase tracking-widest">
-                Fecha fin
-              </label>
-              <input
-                type="date"
-                value={dateEnd}
-                onChange={e => { setDateEnd(e.target.value); setCandidates(null); revalidate({ dateEnd: e.target.value }); }}
-                className={inputClass(!!errors.dateEnd)}
-              />
-              <ErrorMsg msg={errors.dateEnd} />
+          <div>
+            <div className="flex items-baseline justify-between">
+              <label className="field-label" htmlFor="cloud">Nubes máximas en el tile</label>
+              <span className="figure text-sm font-bold">{cloud} %</span>
             </div>
-          </div>
-
-          {/* Relational date error */}
-          {errors.dateRelation && (
-            <p className="mt-3 flex items-center gap-1.5 text-xs text-red-400 font-medium">
-              <AlertCircle className="w-3 h-3 flex-shrink-0" />
-              {errors.dateRelation}
-            </p>
-          )}
-        </div>
-
-        {/* ── Cloud Cover ── */}
-        <div className="bg-zinc-900/40 rounded-2xl border border-white/5 p-6">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="p-2 bg-zinc-500/10 rounded-lg border border-zinc-500/20">
-              <Cloud className="w-4 h-4 text-zinc-400" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-zinc-200">Umbral de Nubosidad</h3>
-              <p className="text-xs text-zinc-500">
-                Máximo de nubes del tile completo [0–100]. Luego se ordenan por nubes dentro de tu zona.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
             <input
+              id="cloud"
               type="range"
               min={0}
               max={100}
-              step={1}
+              step={5}
               value={parseInt(cloud) || 0}
               onChange={e => { setCloud(e.target.value); setCandidates(null); revalidate({ cloud: e.target.value }); }}
-              className="flex-1 h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+              className="w-full mt-2"
             />
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={cloud}
-              onChange={e => { setCloud(e.target.value); setCandidates(null); revalidate({ cloud: e.target.value }); }}
-              className={`w-20 text-center ${inputClass(!!errors.cloud)}`}
-              placeholder="0–100"
-            />
+            <p className="text-sm text-muted mt-1">
+              Es un filtro amplio: después ordenamos las escenas por las nubes que hay dentro de tu zona.
+            </p>
+            <ErrorMsg msg={errors.cloud} />
           </div>
-          <ErrorMsg msg={errors.cloud} />
-        </div>
 
-        {/* ── API error ── */}
-        {apiError && (
-          <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
-            <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-red-400 font-medium">{apiError}</p>
-          </div>
-        )}
-
-        {/* ── Validation summary (only shown after first submit attempt) ── */}
-        {touched && hasErrors && (
-          <div className="flex items-center gap-2 text-xs text-amber-400 font-medium">
-            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-            Corrige los errores indicados antes de enviar.
-          </div>
-        )}
-
-        {/* ── Submit button ── */}
-        <button
-          type="submit"
-          disabled={loading}
-          className={`w-full py-4 rounded-2xl font-bold text-base transition-all shadow-lg flex items-center justify-center gap-3 ${
-            loading
-              ? 'bg-zinc-800 cursor-wait text-zinc-500'
-              : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20 active:scale-[0.98]'
-          }`}
-        >
-          {loading ? (
-            <>
-              <Loader2 className="w-5 h-5 animate-spin" />
-              Buscando escenas y midiendo nubes en tu zona…
-            </>
-          ) : (
-            <>
-              <Search className="w-5 h-5" />
-              Buscar escenas Sentinel-2
-            </>
+          {apiError && (
+            <p role="alert" className="flex items-start gap-2 text-sm text-signal bg-signal-tint border border-signal/30 rounded-[4px] px-3 py-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              {apiError}
+            </p>
           )}
-        </button>
+          {touched && hasErrors && !apiError && (
+            <p className="text-sm text-signal font-semibold">Corrige los campos marcados para continuar.</p>
+          )}
+
+          <button type="submit" disabled={loading} className="btn btn-primary w-full">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+            {loading ? 'Midiendo nubes en tu zona…' : 'Buscar escenas'}
+          </button>
+        </div>
       </form>
 
-      {/* ── Scene picker ── */}
+      {/* ── Selector de escena ── */}
       {candidates && !loading && (
-        <div className="mt-6 bg-zinc-900/40 border border-white/5 rounded-2xl p-6 space-y-5 animate-fade-in">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
-              <Images className="w-4 h-4 text-emerald-500" />
-            </div>
+        <section aria-labelledby="scenes-title" className="space-y-4 animate-fade-in">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h3 className="text-sm font-bold text-zinc-200">
-                {candidates.scenes.length} escenas candidatas
-              </h3>
-              <p className="text-xs text-zinc-500">
-                Ordenadas por nubes dentro de tu zona (capa SCL). Elige la que prefieras.
-              </p>
+              <h2 id="scenes-title" className="font-serif text-xl font-semibold">
+                <span className="figure">{candidates.scenes.length}</span> escenas para {zoneName}
+              </h2>
+              <p className="text-sm text-muted">Ordenadas por nubes dentro de la zona. La primera es la más despejada.</p>
             </div>
+            <button
+              type="button"
+              onClick={handleConfirm}
+              disabled={!selectedId || confirming}
+              className="btn btn-primary"
+            >
+              {confirming ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+              Usar la escena del <span className="figure">{selected?.datetime.slice(0, 10)}</span>
+            </button>
           </div>
-
           <ScenePicker
             searchId={candidates.searchId}
             scenes={candidates.scenes}
             selectedId={selectedId}
             onSelect={setSelectedId}
           />
-
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={!selectedId || confirming}
-            className="w-full py-4 rounded-2xl font-bold text-base transition-all shadow-lg flex items-center justify-center gap-3 bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20 active:scale-[0.98] disabled:opacity-60 disabled:cursor-wait"
-          >
-            {confirming ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5" />}
-            Usar escena del {candidates.scenes.find(c => c.id === selectedId)?.datetime.slice(0, 10)}
-          </button>
-        </div>
+        </section>
       )}
     </div>
   );

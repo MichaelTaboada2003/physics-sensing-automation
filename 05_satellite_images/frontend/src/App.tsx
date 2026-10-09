@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Check, Lock, RotateCcw } from 'lucide-react';
-import type { SearchResponse } from './types';
+import type { SearchResponse, Zone } from './types';
 import SearchPanel from './components/SearchPanel';
 import BandsPanel from './components/BandsPanel';
 import IndicesPanel from './components/IndicesPanel';
@@ -19,6 +19,7 @@ interface AppState {
   sessionId: string | null;
   sceneInfo: { id: string; datetime: string; cloudCover: number } | null;
   mapReady: boolean;
+  zone: Zone | null;
 }
 
 const INITIAL_STATE: AppState = {
@@ -27,6 +28,7 @@ const INITIAL_STATE: AppState = {
   sessionId: null,
   sceneInfo: null,
   mapReady: false,
+  zone: null,
 };
 
 // ── Step definitions ───────────────────────────────────────────────────────────
@@ -75,7 +77,7 @@ function App() {
     return state.sessionId !== null;
   };
 
-  const handleSearchComplete = (response: SearchResponse) => {
+  const handleSearchComplete = (response: SearchResponse, zone: Zone) => {
     setState(prev => ({
       ...prev,
       sessionId: response.session_id,
@@ -84,6 +86,7 @@ function App() {
         datetime: response.datetime,
         cloudCover: response.cloud_cover,
       },
+      zone,
       mapReady: false,
       step: 2,
       reached: 2,
