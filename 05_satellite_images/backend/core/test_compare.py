@@ -309,3 +309,20 @@ def test_map_stats_for_label():
     assert set(d["classes"]) == {"vegetation", "water", "mining", "unclassified"}
     session.class_map = None
     assert client.get("/map/stats", params={"session_id": sid}).json()["classes"] is None
+
+
+def test_series_excludes_years_without_classified_pixels():
+    sid, session = _make_session()
+    good = np.zeros(SHAPE, dtype=np.int16)          # todo vegetación
+    empty = np.full(SHAPE, -1, dtype=np.int16)      # año sin datos (bandas vacías)
+    rgb = {b: np.full(SHAPE, 0.1, dtype=np.float32) for b in sentinel.RGB_BANDS}
+    for year, cmap in [(2019, good), (2020, good), (2021, empty), (2022, good), (2023, good)]:
+        session.comparisons[year] = {
+            "scene": {"id": str(year), "datetime": f"{year}-07-01", "cloud_cover": 1.0, "local_cloud": 0.0},
+            "rgb": rgb, "ndvi": np.full(SHAPE, 0.7, dtype=np.float32),
+            "class_map": cmap, "cloud_fraction": 0.0,     # la SCL dice «despejado»…
+        }
+    series = compare.build_series(session)
+    assert 2021 not in series["years_used_for_trend"]      # …pero no entra en la tendencia
+    point = next(p for p in series["points"] if p["year"] == 2021)
+    assert point["valid_percent"] == 0.0 and point["stats"]["vegetation"]["percent_clear"] is None

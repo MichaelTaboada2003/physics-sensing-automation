@@ -133,7 +133,7 @@ def _series_chart(series: dict) -> bytes:
                                    gridspec_kw={"height_ratios": [2, 1]})
     ends = []
     for key, label in _CLASS_ROWS[:3]:
-        ys = [p["stats"][key]["percent_clear"] or 0 for p in pts]
+        ys = [np.nan if p["stats"][key]["percent_clear"] is None else p["stats"][key]["percent_clear"] for p in pts]
         ax1.plot(years, ys, marker="o", markersize=5, linewidth=2, color=_SERIES_COLORS[key], label=label)
         ends.append([ys[-1], label.split(" ")[0]])
     # Etiquetas directas al final de cada línea, separadas al menos 5 pp
@@ -146,7 +146,7 @@ def _series_chart(series: dict) -> bytes:
     ax1.set_ylim(0, 100)
     ax1.set_ylabel("% del área despejada")
     ax1.legend(fontsize=8, loc="lower left", bbox_to_anchor=(0, 1.0), ncol=3, frameon=False)
-    ax2.plot(years, [p["ndvi_mean"] for p in pts], marker="o", markersize=5, linewidth=2, color="#16a34a")
+    ax2.plot(years, [np.nan if p["ndvi_mean"] is None else p["ndvi_mean"] for p in pts], marker="o", markersize=5, linewidth=2, color="#16a34a")
     ax2.set_ylabel("NDVI medio")
     ax2.set_xticks(years)
     for ax in (ax1, ax2):
@@ -342,8 +342,12 @@ def render_trend_chart(session: SessionData, title: str = "") -> bytes:
     series = build_series(session)
     pts = series["points"]
     years = [p["year"] for p in pts]
+    used_years = set(series["years_used_for_trend"])
+    # Años sin suficientes píxeles clasificados quedan como hueco, nunca como 0
     veg_ha = [
-        (p["stats"]["vegetation"]["percent_clear"] or 0) / 100 * series["total_hectares"] for p in pts
+        (p["stats"]["vegetation"]["percent_clear"] / 100 * series["total_hectares"])
+        if p["year"] in used_years and p["stats"]["vegetation"]["percent_clear"] is not None else np.nan
+        for p in pts
     ]
     trend = series["trends"].get("vegetation")
 
@@ -354,7 +358,7 @@ def render_trend_chart(session: SessionData, title: str = "") -> bytes:
     if trend:
         used = [p for p in pts if p["year"] in series["years_used_for_trend"]]
         x = np.array([p["year"] for p in used], dtype=float)
-        y = np.array([(p["stats"]["vegetation"]["percent_clear"] or 0) / 100 * series["total_hectares"] for p in used])
+        y = np.array([p["stats"]["vegetation"]["percent_clear"] / 100 * series["total_hectares"] for p in used])
         slope = trend["ha_per_year"]
         intercept = float(np.median(y - slope * x))
         color = "#b42318" if trend["significant"] else _MUTED
@@ -367,7 +371,8 @@ def render_trend_chart(session: SessionData, title: str = "") -> bytes:
                 f"IC 95 % {_es(trend['ha_per_year_low'], 1, True)} a {_es(trend['ha_per_year_high'], 1, True)} ha/año)",
                 transform=ax.transAxes, fontsize=10, color=color, ha="left", va="bottom")
     # Eje desde cero: no exagerar visualmente un cambio de pocos puntos porcentuales
-    ax.set_ylim(0, max(veg_ha) * 1.08 if veg_ha else 1)
+    finite = [v for v in veg_ha if np.isfinite(v)]
+    ax.set_ylim(0, max(finite) * 1.08 if finite else 1)
     ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: _es(v, 0)))
     ax.set_ylabel("Hectáreas de vegetación", color=_INK)
     ax.set_xticks(years)

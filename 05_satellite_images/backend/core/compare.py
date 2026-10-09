@@ -353,16 +353,21 @@ def build_summary(session: SessionData, year: int) -> dict:
 
 def _series_point(session: SessionData, year: int, class_map: np.ndarray, ndvi: np.ndarray,
                   scene: dict, cloud_fraction: float) -> dict:
+    stats = class_stats(class_map, pixel_area_m2(session))
     return {
         "year": year,
         "scene": scene,
-        "stats": class_stats(class_map, pixel_area_m2(session)),
+        "stats": stats,
         "ndvi_mean": _nanmean(ndvi),
         "clear_percent": round(100.0 * (1.0 - cloud_fraction), 2),
+        # Píxeles realmente clasificados: excluye nubes y también huecos sin datos
+        # de la escena (bordes de órbita, bandas vacías) que la SCL no siempre marca.
+        "valid_percent": round(100.0 - stats["unclassified"]["percent"], 2),
     }
 
 
 TREND_ALPHA = 0.05
+MIN_VALID_PERCENT = 50.0
 
 
 def trend_test(xs: list[float], ys: list[float]) -> dict | None:
@@ -414,9 +419,9 @@ def build_series(session: SessionData) -> dict:
     points.sort(key=lambda p: p["year"])
 
     total_ha = session.class_map.size * pixel_area_m2(session) / 10_000
-    # Tendencias sobre el % del área despejada (robusto frente a nubes); solo años
-    # con al menos 50 % de la zona despejada.
-    usable = [p for p in points if p["clear_percent"] >= 50]
+    # Tendencias sobre el % del área clasificada (robusto frente a nubes); solo años
+    # con al menos 50 % de la zona clasificada. Un año sin datos nunca entra como 0.
+    usable = [p for p in points if p["valid_percent"] >= MIN_VALID_PERCENT]
     trends = {}
     for name in ("vegetation", "water", "mining"):
         t = trend_test([p["year"] for p in usable],
@@ -435,6 +440,7 @@ def build_series(session: SessionData) -> dict:
         "ndvi_trend": ndvi_trend,
         "total_hectares": round(total_ha, 2),
         "years_used_for_trend": [p["year"] for p in usable],
+        "min_valid_percent": MIN_VALID_PERCENT,
     }
 
 
