@@ -18,6 +18,8 @@ interface SwipeMapProps {
   after: OverlayLayer;
   opacity: number;
   height?: string;
+  /** Contenido superpuesto abajo a la derecha (p. ej. la etiqueta del ejemplar). */
+  children?: React.ReactNode;
 }
 
 // ── Recorte de panes (técnica de leaflet-side-by-side) ─────────────────────────
@@ -67,7 +69,7 @@ function FitBounds({ bounds }: { bounds: LatLngBoundsExpression }) {
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function SwipeMap({ bounds, before, after, opacity, height = 'h-[460px]' }: SwipeMapProps) {
+export default function SwipeMap({ bounds, before, after, opacity, height = 'h-[460px]', children }: SwipeMapProps) {
   const [ratio, setRatio] = useState(0.5);
   const wrapRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -129,6 +131,7 @@ export default function SwipeMap({ bounds, before, after, opacity, height = 'h-[
           </button>
         </>
       )}
+      {children && <div className="absolute right-3 bottom-3 z-[1000] max-w-[calc(100%-1.5rem)]">{children}</div>}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import type { Region } from '../lib/geo';
 import { useRegion } from '../hooks/useRegion';
 import AoiMap from './map/AoiMap';
 import ScenePicker from './ScenePicker';
+import SpecimenLabel from './SpecimenLabel';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -286,7 +287,13 @@ export default function SearchPanel({ onSearchComplete }: SearchPanelProps) {
             bbox={currentBBox()}
             onChange={b => { setBBox(b); setZoneName('Zona personalizada'); }}
             focus={focus}
-          />
+          >
+            {currentBBox() && (
+              <div className="hidden sm:block">
+                <SpecimenLabel zone={{ name: zoneName, bbox: currentBBox()! }} />
+              </div>
+            )}
+          </AoiMap>
           {errors.bboxRelation && (
             <p className="mt-2 flex items-center gap-1.5 text-sm text-signal font-semibold">
               <AlertCircle className="w-4 h-4 shrink-0" />

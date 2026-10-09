@@ -244,7 +244,12 @@ export default function AoiMap({ bbox, onChange, focus, heightClass = 'h-[420px]
         </MapContainer>
 
         {bbox && (
-          <p className="absolute left-3 bottom-3 z-[1000] sheet px-2.5 py-1 text-sm shadow-[var(--shadow-sheet)] pointer-events-none">
+          <p
+            className={`absolute left-3 bottom-3 z-[1000] sheet px-2.5 py-1 text-sm shadow-[var(--shadow-sheet)] pointer-events-none ${
+              // Con la etiqueta visible el área ya se lee ahí: el aviso solo aparece si hay problema
+              children && !outside && area <= WARN_AREA_KM2 ? 'sm:hidden' : ''
+            }`}
+          >
             <span className="figure">{area.toLocaleString('es-CO', { maximumFractionDigits: 0 })} km²</span>
             {outside
               ? <span className="text-signal font-semibold"> · fuera de {region?.name}</span>

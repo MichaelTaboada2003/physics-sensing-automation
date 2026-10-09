@@ -22,6 +22,7 @@ import json
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
+from core.compare import class_stats, pixel_area_m2
 from core.export import export_geotiff, render_classified_map
 from core.report import changes_geojson, report_html, stats_csv
 from session_store import get_session
@@ -306,3 +307,30 @@ def export_changes_geojson(
         media_type="application/geo+json",
         headers={"Content-Disposition": f'attachment; filename="cambios_{year}.geojson"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /map/stats — datos de la etiqueta del ejemplar
+# ---------------------------------------------------------------------------
+
+@router.get("/map/stats")
+def map_stats(
+    session_id: str = Query(..., description="Identificador de la sesión activa."),
+) -> dict:
+    """Nubosidad en la zona y, si ya hay mapa, superficie por clase.
+
+    Alimenta la etiqueta del ejemplar en el frontend; responde también antes de
+    clasificar (``classes`` = null) para mostrar la escena y sus nubes.
+    """
+    session = _get_session_or_404(session_id)
+    has_bands = bool(session.bands)
+    return {
+        "scene_id": session.scene_id,
+        "datetime": session.scene_datetime,
+        "cloud_fraction": round(session.cloud_fraction, 4) if has_bands else None,
+        "pixel_area_m2": pixel_area_m2(session) if has_bands else None,
+        "classes": (
+            class_stats(session.class_map, pixel_area_m2(session))
+            if session.class_map is not None else None
+        ),
+    }

@@ -7,6 +7,8 @@ import IndicesPanel from './components/IndicesPanel';
 import ClassifierPanel from './components/ClassifierPanel';
 import MapPanel from './components/MapPanel';
 import ComparePanel from './components/ComparePanel';
+import SpecimenLabel from './components/SpecimenLabel';
+import { useMapStats } from './hooks/useMapStats';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -94,6 +96,9 @@ function App() {
   };
 
   const current = STEPS[state.step - 1];
+  // La etiqueta se actualiza al cambiar de paso (nubes tras la descarga, clases tras clasificar)
+  const stats = useMapStats(state.sessionId, `${state.step}-${state.mapReady}`);
+  const showSideLabel = state.zone && state.step >= 2 && state.step <= 4;
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[248px_1fr]">
@@ -168,7 +173,21 @@ function App() {
           <p className="text-ink-2 mt-1.5 max-w-[65ch]">{current.purpose}</p>
         </header>
 
-        <div key={state.step} className="max-w-6xl animate-fade-in">
+        <div
+          key={state.step}
+          className={`animate-fade-in ${showSideLabel ? 'max-w-[1400px] grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px] items-start' : 'max-w-6xl'}`}
+        >
+          {showSideLabel && state.zone && (
+            <div className="xl:order-2 xl:sticky xl:top-8">
+              <SpecimenLabel
+                zone={state.zone}
+                scene={state.sceneInfo}
+                cloudFraction={stats?.cloud_fraction}
+                classes={stats?.classes}
+              />
+            </div>
+          )}
+          <div className="min-w-0">
           {state.step === 1 && <SearchPanel onSearchComplete={handleSearchComplete} />}
 
           {state.step === 2 && state.sessionId && state.sceneInfo && (
@@ -196,6 +215,7 @@ function App() {
               sceneYear={new Date(state.sceneInfo.datetime).getUTCFullYear()}
             />
           )}
+          </div>
         </div>
       </main>
     </div>

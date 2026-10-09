@@ -293,3 +293,12 @@ def test_region_limits_search_to_colombia():
 
     reg = client.get("/region").json()
     assert reg["name"] == "Colombia" and reg["geojson"]["features"][0]["geometry"]["type"] == "MultiPolygon"
+
+
+def test_map_stats_for_label():
+    sid, session = _make_session()
+    d = client.get("/map/stats", params={"session_id": sid}).json()
+    assert d["scene_id"] == "CUR" and d["cloud_fraction"] == 0.0
+    assert set(d["classes"]) == {"vegetation", "water", "mining", "unclassified"}
+    session.class_map = None
+    assert client.get("/map/stats", params={"session_id": sid}).json()["classes"] is None
