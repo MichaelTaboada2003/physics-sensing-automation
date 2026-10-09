@@ -8,15 +8,28 @@ Requisitos cubiertos: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7
 
 from __future__ import annotations
 
+import io
+import math
 from datetime import date
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, field_validator, model_validator
+import numpy as np
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
+from pydantic import BaseModel, field_validator
 
-from core.search import search_scene
-from session_store import SessionData, create_session
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from core.region import REGION_NAME, bbox_in_region
+from core.search import list_scenes, search_scene
+from core.sentinel import read_thumbnail
+from session_store import SessionData, create_search, create_session, get_search
 
 router = APIRouter()
+
+MAX_AREA_KM2 = 500
 
 
 # ---------------------------------------------------------------------------
@@ -39,6 +52,9 @@ class SearchRequest(BaseModel):
     bbox: list[float]
     time_range: str
     cloud_cover_threshold: float
+    # Selección manual (opcional): escena elegida de un POST /scenes previo
+    search_id: Optional[str] = None
+    scene_id: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Validación de bbox (Req 2.6)
@@ -79,6 +95,18 @@ class SearchRequest(BaseModel):
             raise ValueError(
                 f"lat_min ({lat_min}) debe ser estrictamente menor que "
                 f"lat_max ({lat_max})."
+            )
+        # Límite de área: a 10 m, 500 km² ≈ 5 M píxeles × 16 capas en memoria
+        lat_mid = math.radians((lat_min + lat_max) / 2)
+        area_km2 = (lon_max - lon_min) * 111.32 * math.cos(lat_mid) * (lat_max - lat_min) * 110.57
+        if area_km2 > MAX_AREA_KM2:
+            raise ValueError(
+                f"El área del bbox ({area_km2:.0f} km²) supera el máximo de {MAX_AREA_KM2} km². "
+                "Reduzca la zona de interés."
+            )
+        if not bbox_in_region(v):
+            raise ValueError(
+                f"La zona debe estar en {REGION_NAME}: ni su centro ni sus esquinas caen dentro del territorio."
             )
         return v
 
@@ -157,13 +185,29 @@ async def search(request: SearchRequest) -> dict:
     HTTPException(502)
         Si la consulta al catálogo STAC falla (Req 2.7).
     """
-    # Pydantic ya validó los campos; si llegamos aquí los datos son correctos.
-    # search_scene lanza HTTPException(404) o HTTPException(502) según proceda.
-    scene = search_scene(
-        bbox=request.bbox,
-        time_range=request.time_range,
-        cloud_threshold=request.cloud_cover_threshold,
-    )
+    if request.search_id and request.scene_id:
+        # Escena elegida manualmente en el selector
+        search_entry = get_search(request.search_id)
+        if search_entry is None or request.scene_id not in search_entry["items"]:
+            raise HTTPException(
+                status_code=404,
+                detail="La búsqueda expiró o la escena no pertenece a ella. Busque de nuevo.",
+            )
+        item = search_entry["items"][request.scene_id]
+        scene = {
+            "id": item.id,
+            "datetime": item.datetime.isoformat(),
+            "cloud_cover": item.properties.get("eo:cloud_cover", 100.0),
+            "item": item,
+        }
+    else:
+        # Pydantic ya validó los campos; si llegamos aquí los datos son correctos.
+        # search_scene lanza HTTPException(404) o HTTPException(502) según proceda.
+        scene = search_scene(
+            bbox=request.bbox,
+            time_range=request.time_range,
+            cloud_threshold=request.cloud_cover_threshold,
+        )
 
     # Crear sesión con los metadatos de la escena (Req 2.5)
     # Almacenamos el item STAC firmado para que el router de descarga pueda
@@ -173,6 +217,7 @@ async def search(request: SearchRequest) -> dict:
         scene_datetime=scene["datetime"],
         cloud_cover=scene["cloud_cover"],
         bbox=request.bbox,
+        cloud_threshold=request.cloud_cover_threshold,
         item=scene.get("item"),
     )
     session_id = create_session(session_data)
@@ -183,3 +228,53 @@ async def search(request: SearchRequest) -> dict:
         "datetime": scene["datetime"],
         "cloud_cover": scene["cloud_cover"],
     }
+
+
+# ---------------------------------------------------------------------------
+# Selector manual de escenas
+# ---------------------------------------------------------------------------
+
+@router.post("/scenes")
+def scenes(request: SearchRequest) -> dict:
+    """Lista hasta 12 escenas candidatas ordenadas por nubosidad dentro del bbox.
+
+    Returns
+    -------
+    dict
+        ``{search_id, scenes: [{id, datetime, cloud_cover, local_cloud, platform}]}``.
+        ``local_cloud`` es el % de píxeles nube/sombra/nieve (SCL) en el bbox.
+    """
+    found = list_scenes(request.bbox, request.time_range, request.cloud_cover_threshold)
+    search_id = create_search(
+        request.bbox, request.cloud_cover_threshold, {s["id"]: s["item"] for s in found}
+    )
+    return {
+        "search_id": search_id,
+        "scenes": [{k: v for k, v in s.items() if k != "item"} for s in found],
+    }
+
+
+@router.get("/scenes/thumbnail")
+def scene_thumbnail(
+    search_id: str = Query(...),
+    scene_id: str = Query(...),
+) -> Response:
+    """Miniatura en color real (asset ``visual``) recortada al bbox de la búsqueda."""
+    entry = get_search(search_id)
+    if entry is None or scene_id not in entry["items"]:
+        raise HTTPException(status_code=404, detail="Búsqueda o escena no encontrada.")
+
+    cached = entry["thumbnails"].get(scene_id)
+    if cached is None:
+        item = entry["items"][scene_id]
+        try:
+            rgb = read_thumbnail(item.assets["visual"].href, entry["bbox"])
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"No se pudo leer la miniatura: {exc}") from exc
+        buf = io.BytesIO()
+        plt.imsave(buf, np.ascontiguousarray(rgb.astype(np.uint8)), format="png")
+        cached = buf.getvalue()
+        entry["thumbnails"][scene_id] = cached
+
+    return Response(content=cached, media_type="image/png",
+                    headers={"Cache-Control": "max-age=1800"})

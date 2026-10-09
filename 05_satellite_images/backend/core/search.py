@@ -15,6 +15,8 @@ import planetary_computer
 import pystac_client
 from fastapi import HTTPException
 
+from core.sentinel import local_cloud_fraction
+
 _STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 _COLLECTION = "sentinel-2-l2a"
 
@@ -139,3 +141,88 @@ def search_scene(
         "cloud_cover": best.properties["eo:cloud_cover"],
         "item": best,
     }
+
+
+# ---------------------------------------------------------------------------
+# Listado de candidatas con nubosidad local (selector manual / años históricos)
+# ---------------------------------------------------------------------------
+
+def _run_search(bbox: list[float], time_range: str, cloud_threshold: float, timeout: int) -> list[Any]:
+    """``_do_search`` con timeout y errores traducidos a HTTPException(502/404)."""
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            items = executor.submit(_do_search, bbox, time_range, cloud_threshold).result(timeout=timeout)
+    except concurrent.futures.TimeoutError:
+        raise HTTPException(
+            status_code=502,
+            detail=f"El catálogo STAC no respondió en {timeout} segundos. Inténtelo de nuevo.",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Error al consultar el catálogo STAC de Planetary Computer: {exc}",
+        ) from exc
+    if not items:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "No se encontraron escenas Sentinel-2 para los parámetros indicados. "
+                "Amplíe el rango de fechas o el umbral de cobertura nubosa."
+            ),
+        )
+    return items
+
+
+def _with_local_cloud(items: list[Any], bbox: list[float]) -> list[dict]:
+    """Calcula en paralelo la nubosidad (SCL) dentro del bbox para cada item."""
+    def _one(item):
+        try:
+            return local_cloud_fraction(item, bbox)
+        except Exception:  # noqa: BLE001 — si falla, se ordena solo por nubosidad del tile
+            return None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        fractions = list(pool.map(_one, items))
+    return [
+        {
+            "id": item.id,
+            "datetime": item.datetime.isoformat(),
+            "cloud_cover": float(item.properties.get("eo:cloud_cover", 100.0)),
+            "local_cloud": None if f is None else round(f * 100, 2),
+            "platform": item.properties.get("platform", ""),
+            "item": item,
+        }
+        for item, f in zip(items, fractions)
+    ]
+
+
+def _rank_key(scene: dict) -> tuple:
+    local = scene["local_cloud"]
+    return (local if local is not None else 100.0 + scene["cloud_cover"], scene["cloud_cover"])
+
+
+def list_scenes(
+    bbox: list[float],
+    time_range: str,
+    cloud_threshold: float,
+    limit: int = 12,
+    timeout: int = 30,
+) -> list[dict]:
+    """Candidatas ordenadas por nubosidad local (SCL dentro del bbox).
+
+    Solo se evalúa la nubosidad local de las *limit* escenas con menor
+    nubosidad de tile, para acotar las lecturas remotas.
+    """
+    items = _run_search(bbox, time_range, cloud_threshold, timeout)
+    items = sorted(items, key=lambda i: i.properties.get("eo:cloud_cover", 100.0))[:limit]
+    return sorted(_with_local_cloud(items, bbox), key=_rank_key)
+
+
+def best_scene(
+    bbox: list[float],
+    time_range: str,
+    cloud_threshold: float,
+    candidates: int = 5,
+) -> dict:
+    """Mejor escena según nubosidad local, evaluando las *candidates* mejores por tile."""
+    return list_scenes(bbox, time_range, cloud_threshold, limit=candidates)[0]
