@@ -45,6 +45,7 @@ from session_store import SessionData
 
 _CLASS_ROWS = [("vegetation", "Vegetación"), ("water", "Agua"), ("mining", "Minería / suelo expuesto"),
                ("unclassified", "Sin datos / nube")]
+_INK_2 = "#3d4856"
 _SERIES_COLORS = {"vegetation": "#16a34a", "water": "#2563eb", "mining": "#b45309"}
 
 
@@ -142,7 +143,7 @@ def _series_chart(series: dict) -> bytes:
         ends[i][0] = max(ends[i][0], ends[i - 1][0] + 5)
     for y, text in ends:
         ax1.annotate(text, (years[-1], y), xytext=(8, 0), textcoords="offset points",
-                     va="center", fontsize=8, color="#3f3f46", annotation_clip=False)
+                     va="center", fontsize=8, color=_INK_2, annotation_clip=False)
     ax1.set_ylim(0, 100)
     ax1.set_ylabel("% del área despejada")
     ax1.legend(fontsize=8, loc="lower left", bbox_to_anchor=(0, 1.0), ncol=3, frameon=False)
@@ -252,16 +253,18 @@ Píxeles comparables: {s['comparable_percent']:.1f} % · con cambio: <b>{s['chan
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Reporte de cobertura terrestre</title>
 <style>
-body {{ font-family: system-ui, -apple-system, sans-serif; color: #18181b; background: #fff;
+body {{ font-family: "Atkinson Hyperlegible Next", system-ui, sans-serif; color: #1b2430; background: #fbfcf8;
        max-width: 1000px; margin: 32px auto; padding: 0 16px; line-height: 1.5; }}
-h1 {{ margin-bottom: 4px; }} h2 {{ border-bottom: 2px solid #e4e4e7; padding-bottom: 4px; margin-top: 36px; }}
-.meta, .note {{ color: #71717a; font-size: 13px; }}
+h1, h2, h3 {{ font-family: "Source Serif 4", Georgia, serif; font-weight: 600; }}
+h1 {{ margin-bottom: 4px; }} h2 {{ border-bottom: 1px solid #aab3a6; padding-bottom: 4px; margin-top: 36px; }}
+.meta, .note {{ color: #5f6b77; font-size: 13px; }}
 img {{ max-width: 100%; height: auto; display: block; margin: 12px 0; }}
 .grid2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }}
 table {{ border-collapse: collapse; width: 100%; font-size: 13px; margin: 8px 0; }}
-th, td {{ border: 1px solid #e4e4e7; padding: 5px 8px; text-align: right; }}
+th, td {{ border: 1px solid #cdd3c8; padding: 5px 8px; text-align: right; }}
+td {{ font-family: "Courier Prime", ui-monospace, monospace; font-variant-numeric: tabular-nums; }}
 th:first-child, td:first-child {{ text-align: left; }}
-table.kv th {{ text-align: left; width: 220px; background: #fafafa; }} table.kv td {{ text-align: left; }}
+table.kv th {{ text-align: left; width: 220px; background: #f4f6f0; }} table.kv td {{ text-align: left; }}
 @media (max-width: 700px) {{ .grid2 {{ grid-template-columns: 1fr; }} }}
 @media print {{ .page {{ break-before: page; }} body {{ margin: 0; }} }}
 </style></head><body>
