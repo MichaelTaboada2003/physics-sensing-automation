@@ -65,13 +65,14 @@ _BAND_WORKERS = 6
 CLASS_NAMES = {0: "vegetation", 1: "water", 2: "mining", -1: "unclassified"}
 
 # Categorías del mapa de cambios (índice → color, etiqueta)
+# Validada para daltonismo en todos los pares (rojo/teal/violeta/ámbar)
 CHANGE_LABELS = [
-    ("#d4d4d8", "Sin cambio"),
-    ("#dc2626", "Pérdida de vegetación"),
-    ("#22c55e", "Ganancia de vegetación"),
+    ("#d9ded3", "Sin cambio"),
+    ("#b42318", "Pérdida de vegetación"),
+    ("#0d9488", "Ganancia de vegetación"),
     ("#f59e0b", "Nuevo suelo expuesto / minería"),
-    ("#8b5cf6", "Otro cambio"),
-    ("black",   "Sin datos / nube"),
+    ("#7c3aed", "Otro cambio"),
+    ("#1b2430", "Sin datos / nube"),
 ]
 _CHANGE_CMAP = ListedColormap([c for c, _ in CHANGE_LABELS])
 

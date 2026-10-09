@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Search, Layers, BarChart2, Cpu, Map, History, ChevronRight, Satellite } from 'lucide-react';
-import type { SearchResponse, StreamLine } from './types';
+import { Check, Lock, RotateCcw } from 'lucide-react';
+import type { SearchResponse } from './types';
 import SearchPanel from './components/SearchPanel';
 import BandsPanel from './components/BandsPanel';
 import IndicesPanel from './components/IndicesPanel';
@@ -14,53 +14,60 @@ type AppStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 interface AppState {
   step: AppStep;
+  /** Paso más avanzado alcanzado: los anteriores se marcan como listos. */
+  reached: AppStep;
   sessionId: string | null;
   sceneInfo: { id: string; datetime: string; cloudCover: number } | null;
-  streamLogs: StreamLine[];
-  errorMsg: string;
-  loading: boolean;
   mapReady: boolean;
 }
 
+const INITIAL_STATE: AppState = {
+  step: 1,
+  reached: 1,
+  sessionId: null,
+  sceneInfo: null,
+  mapReady: false,
+};
+
 // ── Step definitions ───────────────────────────────────────────────────────────
 
-const STEPS = [
-  { id: 1 as AppStep, label: 'Búsqueda',   icon: Search   },
-  { id: 2 as AppStep, label: 'Bandas',     icon: Layers   },
-  { id: 3 as AppStep, label: 'Índices',    icon: BarChart2 },
-  { id: 4 as AppStep, label: 'Clasificar', icon: Cpu      },
-  { id: 5 as AppStep, label: 'Mapa',       icon: Map      },
-  { id: 6 as AppStep, label: 'Comparar',   icon: History  },
+const STEPS: { id: AppStep; label: string; title: string; purpose: string }[] = [
+  {
+    id: 1, label: 'Zona y escena', title: 'Zona y escena',
+    purpose: 'Elige un lugar de Colombia y la imagen Sentinel-2 con menos nubes sobre él.',
+  },
+  {
+    id: 2, label: 'Bandas', title: 'Descarga de bandas',
+    purpose: 'Nueve bandas espectrales y la máscara de nubes, en reflectancia de superficie a 10 m.',
+  },
+  {
+    id: 3, label: 'Índices', title: 'Índices espectrales',
+    purpose: 'Siete índices para leer vegetación, agua y suelo expuesto. Las nubes quedan en gris.',
+  },
+  {
+    id: 4, label: 'Clasificar', title: 'Clasificador',
+    purpose: 'Reglas de pseudo-etiquetado y un Random Forest que clasifica cada píxel.',
+  },
+  {
+    id: 5, label: 'Mapa', title: 'Mapa de cobertura',
+    purpose: 'La clasificación sobre la imagen satelital, lista para exportar.',
+  },
+  {
+    id: 6, label: 'Comparar', title: 'Comparativa temporal',
+    purpose: 'La misma zona hasta 10 años atrás, con tendencias y su significancia.',
+  },
 ];
 
 // ── App ────────────────────────────────────────────────────────────────────────
 
 function App() {
-  const [state, setState] = useState<AppState>({
-    step: 1,
-    sessionId: null,
-    sceneInfo: null,
-    streamLogs: [],
-    errorMsg: '',
-    loading: false,
-    mapReady: false,
-  });
+  const [state, setState] = useState<AppState>(INITIAL_STATE);
 
-  const setStep = (step: AppStep) => setState(prev => ({ ...prev, step }));
+  const goTo = (step: AppStep) =>
+    setState(prev => ({ ...prev, step, reached: (Math.max(prev.reached, step) as AppStep) }));
 
-  const handleReset = () => {
-    setState({
-      step: 1,
-      sessionId: null,
-      sceneInfo: null,
-      streamLogs: [],
-      errorMsg: '',
-      loading: false,
-      mapReady: false,
-    });
-  };
+  const handleReset = () => setState(INITIAL_STATE);
 
-  // A step is accessible if it has been reached (sessionId unlocks steps 2+)
   const isStepAccessible = (stepId: AppStep): boolean => {
     if (stepId === 1) return true;
     // La comparativa necesita el mapa clasificado actual
@@ -77,177 +84,116 @@ function App() {
         datetime: response.datetime,
         cloudCover: response.cloud_cover,
       },
+      mapReady: false,
       step: 2,
+      reached: 2,
     }));
   };
 
+  const current = STEPS[state.step - 1];
+
   return (
-    <div className="min-h-screen p-4 md:p-8">
-      {/* ── Header ── */}
-      <header className="max-w-7xl mx-auto mb-12 flex flex-col md:flex-row items-center justify-between gap-8 animate-fade-in">
-        <div className="flex items-center gap-4">
-          <div className="p-3 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
-            <Satellite className="w-8 h-8 text-emerald-500" />
-          </div>
+    <div className="min-h-dvh lg:grid lg:grid-cols-[248px_1fr]">
+      {/* ── Riel: carpeta de género ── */}
+      <aside className="bg-folder text-folder-ink lg:sticky lg:top-0 lg:h-dvh flex flex-col">
+        <div className="px-5 pt-5 pb-4 lg:pt-7 lg:pb-6 flex items-baseline justify-between gap-3 lg:block">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight accent-gradient-text">
-              Imágenes Satelitales
-            </h1>
-            <p className="text-zinc-500 font-medium">
-              Cobertura terrestre de Colombia con Sentinel-2 y Random Forest
-            </p>
+            <p className="font-serif text-xl font-semibold leading-tight">Imágenes Satelitales</p>
+            <p className="text-sm text-folder-muted mt-0.5">Cobertura terrestre · Colombia</p>
           </div>
         </div>
 
-        {/* ── Stepper nav ── */}
-        <nav className="flex items-center gap-2 bg-zinc-900/40 p-2 rounded-2xl border border-white/5">
-          {STEPS.map((s, i) => (
-            <div key={s.id} className="flex items-center">
-              <button
-                onClick={() => isStepAccessible(s.id) && setStep(s.id)}
-                disabled={!isStepAccessible(s.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-300 ${
-                  state.step === s.id
-                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20'
-                    : isStepAccessible(s.id)
-                    ? 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5 cursor-pointer'
-                    : 'text-zinc-700 cursor-not-allowed'
-                }`}
-              >
-                <s.icon className="w-4 h-4" />
-                <span className="text-sm font-semibold hidden lg:block">{s.label}</span>
-              </button>
-              {i < STEPS.length - 1 && (
-                <ChevronRight className="w-4 h-4 text-zinc-700 mx-1 hidden lg:block" />
-              )}
-            </div>
-          ))}
+        <nav aria-label="Pasos del análisis" className="px-3 lg:flex-1 overflow-x-auto lg:overflow-visible">
+          <ol className="flex lg:flex-col gap-1 pb-3 lg:pb-0">
+            {STEPS.map(s => {
+              const accessible = isStepAccessible(s.id);
+              const active = state.step === s.id;
+              const done = s.id < state.reached && accessible && !active;
+              return (
+                <li key={s.id} className="shrink-0">
+                  <button
+                    onClick={() => accessible && goTo(s.id)}
+                    disabled={!accessible}
+                    aria-current={active ? 'step' : undefined}
+                    className={`w-full flex items-center gap-3 rounded-[5px] px-2.5 py-2 text-left transition-colors ${
+                      active
+                        ? 'bg-paper text-ink'
+                        : accessible
+                        ? 'hover:bg-folder-2 text-folder-ink'
+                        : 'text-folder-muted/60 cursor-not-allowed'
+                    }`}
+                  >
+                    <span
+                      className={`figure grid place-items-center w-7 h-7 rounded-full text-sm font-bold shrink-0 border ${
+                        active
+                          ? 'bg-stamp text-white border-stamp'
+                          : done
+                          ? 'bg-folder-ink text-folder border-folder-ink'
+                          : 'border-folder-muted/50'
+                      }`}
+                      aria-hidden
+                    >
+                      {done ? <Check className="w-3.5 h-3.5" strokeWidth={3} /> : s.id}
+                    </span>
+                    <span className="text-[0.9375rem] font-semibold whitespace-nowrap">{s.label}</span>
+                    {!accessible && <Lock className="w-3.5 h-3.5 ml-auto hidden lg:block" aria-label="bloqueado" />}
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
         </nav>
-      </header>
 
-      {/* ── Main panels ── */}
-      <main className="max-w-7xl mx-auto">
-
-        {/* Step 1 — Búsqueda */}
-        {state.step === 1 && (
-          <div className="glass-panel p-8 md:p-12 animate-fade-in">
-            <div className="flex flex-col items-center mb-10">
-              <div className="w-20 h-20 bg-emerald-500/10 rounded-3xl flex items-center justify-center mb-6 border border-emerald-500/20">
-                <Search className="w-9 h-9 text-emerald-500" />
-              </div>
-              <h2 className="text-3xl font-bold mb-3">Configurar Consulta STAC</h2>
-              <p className="text-zinc-400 max-w-sm text-center leading-relaxed text-sm">
-                Elige una zona de Colombia en el mapa y el rango temporal; luego escoge entre
-                las escenas Sentinel-2 con menos nubes sobre tu zona.
-              </p>
-            </div>
-            <SearchPanel onSearchComplete={handleSearchComplete} />
+        {state.sceneInfo && (
+          <div className="hidden lg:block mx-3 mb-4 p-3 rounded-[5px] border border-folder-2 text-sm">
+            <p className="text-folder-muted">Escena</p>
+            <p className="figure text-folder-ink mt-0.5">{state.sceneInfo.datetime.slice(0, 10)}</p>
+            <button
+              onClick={handleReset}
+              className="mt-3 inline-flex items-center gap-1.5 text-folder-ink/90 hover:text-white font-semibold"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Nuevo análisis
+            </button>
           </div>
         )}
+      </aside>
 
-        {/* Step 2 — Bandas */}
-        {state.step === 2 && state.sessionId && state.sceneInfo && (
-          <div className="glass-panel p-8 md:p-12 animate-fade-in">
-            <div className="flex flex-col items-center mb-10">
-              <div className="w-20 h-20 bg-blue-500/10 rounded-3xl flex items-center justify-center mb-6 border border-blue-500/20">
-                <Layers className="w-9 h-9 text-blue-500" />
-              </div>
-              <h2 className="text-3xl font-bold mb-3">Descarga de Bandas</h2>
-              <p className="text-zinc-400 max-w-sm text-center leading-relaxed text-sm">
-                Descarga 9 bandas espectrales y la máscara de nubes (SCL), convertidas a
-                reflectancia de superficie y alineadas en una grilla de 10 m.
-              </p>
-            </div>
-            <BandsPanel
-              sessionId={state.sessionId}
-              sceneInfo={state.sceneInfo}
-              onComplete={() => setStep(3)}
-            />
-          </div>
-        )}
+      {/* ── Área de trabajo ── */}
+      <main className="min-w-0 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+        <header className="mb-6 lg:mb-8 max-w-6xl">
+          <h1 className="font-serif text-[1.75rem] sm:text-[2rem] font-semibold leading-tight">{current.title}</h1>
+          <p className="text-ink-2 mt-1.5 max-w-[65ch]">{current.purpose}</p>
+        </header>
 
-        {/* Step 3 — Índices */}
-        {state.step === 3 && state.sessionId && state.sceneInfo && (
-          <div className="glass-panel p-8 md:p-12 animate-fade-in">
-            <div className="flex flex-col items-center mb-10">
-              <div className="w-20 h-20 bg-yellow-500/10 rounded-3xl flex items-center justify-center mb-6 border border-yellow-500/20">
-                <BarChart2 className="w-9 h-9 text-yellow-500" />
-              </div>
-              <h2 className="text-3xl font-bold mb-3">Índices Espectrales</h2>
-              <p className="text-zinc-400 max-w-sm text-center leading-relaxed text-sm">
-                Explora 7 índices (NDVI, BSI, NDWI, MNDWI, NDBI, EVI, SAVI) para interpretar
-                la vegetación, el suelo expuesto y el agua. Las nubes quedan en gris.
-              </p>
-            </div>
-            <IndicesPanel
-              sessionId={state.sessionId}
-              sceneInfo={state.sceneInfo}
-              onComplete={() => setStep(4)}
-            />
-          </div>
-        )}
+        <div key={state.step} className="max-w-6xl animate-fade-in">
+          {state.step === 1 && <SearchPanel onSearchComplete={handleSearchComplete} />}
 
-        {/* Step 4 — Clasificar */}
-        {state.step === 4 && state.sessionId && (
-          <div className="glass-panel p-8 md:p-12 animate-fade-in">
-            <div className="flex flex-col items-center mb-10">
-              <div className="w-20 h-20 bg-purple-500/10 rounded-3xl flex items-center justify-center mb-6 border border-purple-500/20">
-                <Cpu className="w-9 h-9 text-purple-500" />
-              </div>
-              <h2 className="text-3xl font-bold mb-3">Entrenamiento del Clasificador</h2>
-              <p className="text-zinc-400 max-w-sm text-center leading-relaxed text-sm">
-                Ajusta los umbrales de pseudo-etiquetado y entrena el modelo Random Forest
-                para clasificar la cobertura terrestre.
-              </p>
-            </div>
+          {state.step === 2 && state.sessionId && state.sceneInfo && (
+            <BandsPanel sessionId={state.sessionId} sceneInfo={state.sceneInfo} onComplete={() => goTo(3)} />
+          )}
+
+          {state.step === 3 && state.sessionId && state.sceneInfo && (
+            <IndicesPanel sessionId={state.sessionId} sceneInfo={state.sceneInfo} onComplete={() => goTo(4)} />
+          )}
+
+          {state.step === 4 && state.sessionId && (
             <ClassifierPanel
               sessionId={state.sessionId}
-              onComplete={() => setState(prev => ({ ...prev, step: 5, mapReady: true }))}
+              onComplete={() => setState(prev => ({ ...prev, step: 5, reached: 5, mapReady: true }))}
             />
-          </div>
-        )}
+          )}
 
-        {/* Step 5 — Mapa */}
-        {state.step === 5 && state.sessionId && (
-          <div className="glass-panel p-8 md:p-12 animate-fade-in">
-            <div className="flex flex-col items-center mb-10">
-              <div className="w-20 h-20 bg-teal-500/10 rounded-3xl flex items-center justify-center mb-6 border border-teal-500/20">
-                <Map className="w-9 h-9 text-teal-500" />
-              </div>
-              <h2 className="text-3xl font-bold mb-3">Mapa Clasificado</h2>
-              <p className="text-zinc-400 max-w-sm text-center leading-relaxed text-sm">
-                Visualiza y exporta el mapa de clasificación con las clases Vegetación,
-                Agua, Minería/Suelo expuesto y No clasificado.
-              </p>
-            </div>
-            <MapPanel
-              sessionId={state.sessionId}
-              onReset={handleReset}
-              onCompare={() => setStep(6)}
-            />
-          </div>
-        )}
+          {state.step === 5 && state.sessionId && (
+            <MapPanel sessionId={state.sessionId} onReset={handleReset} onCompare={() => goTo(6)} />
+          )}
 
-        {/* Step 6 — Comparativa temporal */}
-        {state.step === 6 && state.sessionId && state.sceneInfo && (
-          <div className="glass-panel p-8 md:p-12 animate-fade-in">
-            <div className="flex flex-col items-center mb-10">
-              <div className="w-20 h-20 bg-orange-500/10 rounded-3xl flex items-center justify-center mb-6 border border-orange-500/20">
-                <History className="w-9 h-9 text-orange-500" />
-              </div>
-              <h2 className="text-3xl font-bold mb-3">Comparativa Temporal</h2>
-              <p className="text-zinc-400 max-w-sm text-center leading-relaxed text-sm">
-                Compara con cualquier año de la última década o calcula la serie completa
-                con tendencias, sobre el mapa y con exportación.
-              </p>
-            </div>
+          {state.step === 6 && state.sessionId && state.sceneInfo && (
             <ComparePanel
               sessionId={state.sessionId}
               sceneYear={new Date(state.sceneInfo.datetime).getUTCFullYear()}
             />
-          </div>
-        )}
-
+          )}
+        </div>
       </main>
     </div>
   );

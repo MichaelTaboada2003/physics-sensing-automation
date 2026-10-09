@@ -22,17 +22,18 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # Color mapping
 # Class labels: 0 = Vegetación, 1 = Agua, 2 = Minería/Suelo expuesto, -1 = No clasificado
-# Colormap index:  0 → green, 1 → blue, 2 → saddlebrown, 3 → black
+# Colormap index:  0 → verde, 1 → azul, 2 → ocre, 3 → tinta
 # ---------------------------------------------------------------------------
-CLASS_COLORS = ["green", "blue", "saddlebrown", "black"]
+# Paleta validada para daltonismo (ver frontend/src/index.css)
+CLASS_COLORS = ["#16a34a", "#2563eb", "#b45309", "#1b2430"]
 
 _CMAP = ListedColormap(CLASS_COLORS)
 
 _LEGEND_LABELS = [
-    ("green",       "Vegetación"),
-    ("blue",        "Agua"),
-    ("saddlebrown", "Minería/Suelo expuesto"),
-    ("black",       "No clasificado / nube"),
+    ("#16a34a", "Vegetación"),
+    ("#2563eb", "Agua"),
+    ("#b45309", "Minería/Suelo expuesto"),
+    ("#1b2430", "No clasificado / nube"),
 ]
 
 
