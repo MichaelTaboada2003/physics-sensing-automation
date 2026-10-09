@@ -25,6 +25,8 @@ interface SpecimenLabelProps {
   vegetationTrend?: Trend | null;
   /** Arranca plegada (móvil o mapas pequeños). */
   defaultCollapsed?: boolean;
+  /** Fichas visibles sobre la etiqueta (menos dentro de un mapa, para que quepa). */
+  maxSlips?: number;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -55,13 +57,13 @@ const CLASS_ROWS: { key: Exclude<ClassKey, 'unclassified'>; label: string; color
 // ── Componente ─────────────────────────────────────────────────────────────────
 
 export default function SpecimenLabel({
-  zone, scene, cloudFraction, classes, slips = [], vegetationTrend, defaultCollapsed = false,
+  zone, scene, cloudFraction, classes, slips = [], vegetationTrend, defaultCollapsed = false, maxSlips = 4,
 }: SpecimenLabelProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const [w, s, e, n] = zone.bbox;
   const meta = scene ? sceneMeta(scene.id) : null;
   const ordered = [...slips].sort((a, b) => b.year - a.year);
-  const visibleSlips = ordered.slice(0, 4);
+  const visibleSlips = ordered.slice(0, maxSlips);
   const significant = vegetationTrend?.significant;
 
   return (
@@ -80,7 +82,7 @@ export default function SpecimenLabel({
                 <span className="figure text-muted">{slip.date}</span>
               </p>
               <p className="figure text-[0.8125rem] mt-0.5 flex gap-3">
-                <span className="text-veg font-bold">V {pct(slip.vegetation)}</span>
+                <span className="text-veg-ink font-bold">V {pct(slip.vegetation)}</span>
                 <span className="text-water">A {pct(slip.water)}</span>
                 <span className="text-soil">S {pct(slip.mining)}</span>
               </p>

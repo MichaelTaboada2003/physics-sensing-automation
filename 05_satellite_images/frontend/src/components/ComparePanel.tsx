@@ -68,6 +68,7 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo }: 
   const [tab, setTab] = useState<Tab>('year');
   const [series, setSeries] = useState<TimeSeries | null>(null);
   const [layerKind, setLayerKind] = useState<LayerKind>('rgb');
+  const [grid, setGrid] = useState(false);
   const [opacity, setOpacity] = useState(1);
   const { bounds } = useLayerBounds(sessionId);
   const stats = useMapStats(sessionId, 'compare');
@@ -157,16 +158,17 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo }: 
   const slips = [...slipsByYear.values()];
   const currentPoint = series?.points.find(p => p.year === sceneYear);
 
-  const label = zone && (
-    <SpecimenLabel
-      zone={zone}
-      scene={sceneInfo}
-      cloudFraction={stats?.cloud_fraction}
-      classes={stats?.classes ?? currentPoint?.stats}
-      slips={slips}
-      vegetationTrend={series?.trends.vegetation}
-    />
-  );
+  const labelProps = zone && {
+    zone,
+    scene: sceneInfo,
+    cloudFraction: stats?.cloud_fraction,
+    classes: stats?.classes ?? currentPoint?.stats,
+    slips,
+    vegetationTrend: series?.trends.vegetation,
+  };
+  const label = labelProps && <SpecimenLabel {...labelProps} />;
+  // Dentro del mapa caben menos fichas
+  const mapLabel = labelProps && <SpecimenLabel {...labelProps} maxSlips={2} />;
 
   const vegPast = active?.past.vegetation.hectares ?? 0;
   const vegNow = active?.current.vegetation.hectares ?? 0;
@@ -286,6 +288,8 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo }: 
                     onKind={setLayerKind}
                     opacity={opacity}
                     onOpacity={setOpacity}
+                    graticule={grid}
+                    onGraticule={setGrid}
                   />
                   <MapLegend kind={layerKind} />
                 </div>
@@ -295,9 +299,10 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo }: 
                       bounds={bounds}
                       after={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=change&year=${active.year}`, label: 'Cambios' }}
                       opacity={opacity}
+                      graticule={grid}
                       height="h-[440px] lg:h-[600px]"
                     >
-                      {label && <div className="hidden sm:block">{label}</div>}
+                      {mapLabel && <div className="hidden sm:block">{mapLabel}</div>}
                     </SwipeMap>
                   ) : (
                     <SwipeMap
@@ -305,9 +310,10 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo }: 
                       before={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=${layerKind}&year=${active.year}`, label: String(active.year) }}
                       after={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=${layerKind}`, label: String(sceneYear) }}
                       opacity={opacity}
+                      graticule={grid}
                       height="h-[440px] lg:h-[600px]"
                     >
-                      {label && <div className="hidden sm:block">{label}</div>}
+                      {mapLabel && <div className="hidden sm:block">{mapLabel}</div>}
                     </SwipeMap>
                   )
                 )}

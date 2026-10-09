@@ -31,7 +31,8 @@
   --color-signal: #b42318;      /* rojo de tipo: cambio significativo y pérdida */
   --color-signal-tint: #fbeae8;
 
-  --color-veg: #16a34a;
+  --color-veg: #16a34a;          /* trazos y muestras */
+  --color-veg-ink: #15803d;      /* texto verde: 4.9:1 sobre papel */
   --color-water: #2563eb;
   --color-soil: #b45309;
   --color-gain: #0d9488;
@@ -257,3 +258,51 @@ h1, h2, h3 {
 .leaflet-control-attribution a { color: var(--color-ink) !important; }
 .leaflet-container.aoi-drawing { cursor: crosshair; }
 .leaflet-image-layer.pixelated { image-rendering: pixelated; }
+
+/* Retícula de coordenadas */
+.graticule-label span {
+  position: absolute;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-ink);
+  background: rgb(251 252 248 / 0.85);
+  padding: 0 3px;
+  border-radius: 2px;
+}
+.graticule-top span { transform: translate(-50%, 4px); }
+.graticule-left span { transform: translate(4px, -50%); }
+
+/* Controles de Leaflet con el trazo de lucide y la tipografía de la interfaz */
+.leaflet-control-layers-toggle {
+  width: 36px !important;
+  height: 36px !important;
+  background-size: 20px 20px !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231b2430' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z'/%3E%3Cpath d='m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65'/%3E%3Cpath d='m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65'/%3E%3C/svg%3E") !important;
+}
+.leaflet-bar a {
+  font-family: var(--font-sans) !important;
+  font-weight: 400 !important;
+  font-size: 20px !important;
+}
+.leaflet-control-layers label { font-family: var(--font-sans); }
+
+/* Desplegables: chevron propio en lugar del marcador nativo */
+summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+summary::-webkit-details-marker { display: none; }
+summary::before {
+  content: "";
+  flex: none;
+  width: 14px;
+  height: 14px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+  transition: transform 0.15s var(--ease-settle);
+}
+details[open] > summary::before { transform: rotate(90deg); }

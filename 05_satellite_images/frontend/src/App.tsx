@@ -150,27 +150,27 @@ function App() {
     <div className="min-h-dvh lg:grid lg:grid-cols-[248px_1fr]">
       {/* ── Riel: carpeta de género ── */}
       <aside className="bg-folder text-folder-ink lg:sticky lg:top-0 lg:h-dvh flex flex-col">
-        <div className="px-5 pt-5 pb-4 lg:pt-7 lg:pb-6 flex items-baseline justify-between gap-3 lg:block">
-          <div>
-            <p className="font-serif text-xl font-semibold leading-tight">Imágenes Satelitales</p>
-            <p className="text-sm text-folder-muted mt-0.5">Cobertura terrestre · Colombia</p>
+        {/* Móvil: una sola fila con el nombre y el modo; escritorio: bloque completo */}
+        <div className="flex items-center justify-between gap-3 px-4 pt-3 pb-2 lg:block lg:px-0 lg:pt-0 lg:pb-0">
+          <div className="lg:px-5 lg:pt-7 lg:pb-6">
+            <p className="font-serif text-lg lg:text-xl font-semibold leading-tight">Imágenes Satelitales</p>
+            <p className="hidden lg:block text-sm text-folder-muted mt-0.5">Cobertura terrestre · Colombia</p>
           </div>
-        </div>
-
-        <div className="px-3 pb-3 lg:pb-5">
-          <div className="flex p-[3px] rounded-[5px] bg-folder-2" role="group" aria-label="Modo">
-            {([['guided', 'Guiado'], ['expert', 'Experto']] as const).map(([m, label]) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                aria-pressed={mode === m}
-                className={`flex-1 py-1.5 rounded-[3px] text-sm font-semibold transition-colors ${
-                  mode === m ? 'bg-paper text-ink' : 'text-folder-ink hover:text-white'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+          <div className="lg:px-3 lg:pb-5 shrink-0">
+            <div className="flex lg:w-full p-[3px] rounded-[5px] bg-folder-2" role="group" aria-label="Modo">
+              {([['guided', 'Guiado'], ['expert', 'Experto']] as const).map(([m, label]) => (
+                <button
+                  key={m}
+                  onClick={() => setMode(m)}
+                  aria-pressed={mode === m}
+                  className={`lg:flex-1 px-3 lg:px-0 py-1 lg:py-1.5 rounded-[3px] text-sm font-semibold transition-colors ${
+                    mode === m ? 'bg-paper text-ink' : 'text-folder-ink hover:text-white'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

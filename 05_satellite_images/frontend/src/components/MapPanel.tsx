@@ -26,6 +26,7 @@ interface MapPanelProps {
 
 export default function MapPanel({ sessionId, zone, sceneInfo, onReset, onCompare }: MapPanelProps) {
   const [layerKind, setLayerKind] = useState<LayerKind>('class');
+  const [grid, setGrid] = useState(false);
   const [opacity, setOpacity] = useState(0.8);
   const { bounds, error: boundsError } = useLayerBounds(sessionId);
   const stats = useMapStats(sessionId, 'map');
@@ -68,6 +69,8 @@ export default function MapPanel({ sessionId, zone, sceneInfo, onReset, onCompar
             onKind={setLayerKind}
             opacity={opacity}
             onOpacity={setOpacity}
+            graticule={grid}
+            onGraticule={setGrid}
           />
           <MapLegend kind={layerKind} />
         </div>
@@ -76,6 +79,7 @@ export default function MapPanel({ sessionId, zone, sceneInfo, onReset, onCompar
             bounds={bounds}
             after={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=${layerKind}`, label: 'Actual' }}
             opacity={opacity}
+            graticule={grid}
             height="h-[440px] lg:h-[600px]"
           >
             {zone && (

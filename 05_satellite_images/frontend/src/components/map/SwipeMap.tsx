@@ -3,6 +3,7 @@ import { ImageOverlay, MapContainer, Pane, useMap } from 'react-leaflet';
 import type { LatLngBoundsExpression } from 'leaflet';
 import { GripVertical } from 'lucide-react';
 import BaseLayers from './basemaps';
+import Graticule from './Graticule';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,8 @@ interface SwipeMapProps {
   height?: string;
   /** Contenido superpuesto abajo a la derecha (p. ej. la etiqueta del ejemplar). */
   children?: React.ReactNode;
+  /** Muestra la retícula de coordenadas. */
+  graticule?: boolean;
 }
 
 // ── Recorte de panes (técnica de leaflet-side-by-side) ─────────────────────────
@@ -69,7 +72,7 @@ function FitBounds({ bounds }: { bounds: LatLngBoundsExpression }) {
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function SwipeMap({ bounds, before, after, opacity, height = 'h-[460px]', children }: SwipeMapProps) {
+export default function SwipeMap({ bounds, before, after, opacity, height = 'h-[460px]', children, graticule = false }: SwipeMapProps) {
   const [ratio, setRatio] = useState(0.5);
   const wrapRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -94,6 +97,7 @@ export default function SwipeMap({ bounds, before, after, opacity, height = 'h-[
           <ImageOverlay key={after.url} url={after.url} bounds={bounds} opacity={opacity} className="pixelated" />
         </Pane>
         <PaneClipper ratio={ratio} enabled={swipe} />
+        {graticule && <Graticule />}
       </MapContainer>
 
       {swipe && (
@@ -131,7 +135,7 @@ export default function SwipeMap({ bounds, before, after, opacity, height = 'h-[
           </button>
         </>
       )}
-      {children && <div className="absolute right-3 bottom-3 z-[1000] max-w-[calc(100%-1.5rem)]">{children}</div>}
+      {children && <div className="absolute right-3 bottom-3 z-[1000] max-w-[calc(100%-1.5rem)] max-h-[calc(100%-4.75rem)] overflow-y-auto">{children}</div>}
     </div>
   );
 }

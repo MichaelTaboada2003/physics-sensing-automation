@@ -225,7 +225,7 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
                 <XAxis dataKey="year" tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#aab3a6' }} />
                 <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} unit=" %" domain={[0, 100]} />
                 <Tooltip {...TOOLTIP_PROPS} formatter={(v, name) => [`${fmt(Number(v), 1)} %`, name]} />
-                <Legend wrapperStyle={{ fontSize: 13, color: '#3d4856' }} iconType="plainline" />
+                <Legend wrapperStyle={{ fontSize: 13 }} iconType="plainline" formatter={v => <span style={{ color: '#3d4856' }}>{v}</span>} />
                 {CLASS_KEYS.map(k => (
                   <Line
                     key={k}

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { MapContainer, Polygon, Rectangle, useMap, useMapEvents } from 'react-leaflet';
 import type { LatLng, LatLngBoundsExpression, LatLngExpression, Map as LeafletMap } from 'leaflet';
-import { Square, Search, Loader2, Crosshair, Maximize2 } from 'lucide-react';
+import { Square, Search, Loader2, Crosshair, Maximize2, Grid3x3 } from 'lucide-react';
 import type { BBox } from '../../types';
 import { MAX_AREA_KM2, PRESETS, WARN_AREA_KM2, bboxAreaKm2, bboxInRegion } from '../../lib/geo';
 import type { Region } from '../../lib/geo';
 import { useRegion } from '../../hooks/useRegion';
 import BaseLayers from './basemaps';
+import Graticule from './Graticule';
 
 const toBounds = ([w, s, e, n]: BBox): LatLngBoundsExpression => [[s, w], [n, e]];
 
@@ -118,6 +119,7 @@ export default function AoiMap({ bbox, onChange, focus, heightClass = 'h-[420px]
   const region = useRegion();
   const [map, setMap] = useState<LeafletMap | null>(null);
   const [drawing, setDrawing] = useState(false);
+  const [grid, setGrid] = useState(false);
   const [draft, setDraft] = useState<BBox | null>(null);
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
@@ -207,6 +209,16 @@ export default function AoiMap({ bbox, onChange, focus, heightClass = 'h-[420px]
             <Maximize2 className="w-4 h-4" />
             <span className="hidden xl:inline">Colombia</span>
           </button>
+          <button
+            type="button"
+            onClick={() => setGrid(g => !g)}
+            aria-pressed={grid}
+            title="Mostrar la retícula de coordenadas"
+            className={`btn px-3 ${grid ? 'btn-primary' : 'btn-secondary'}`}
+          >
+            <Grid3x3 className="w-4 h-4" />
+            <span className="hidden xl:inline">Retícula</span>
+          </button>
           <button type="button" onClick={useView} title="Usar la vista actual como zona" className="btn btn-secondary px-3">
             <Crosshair className="w-4 h-4" />
             <span className="hidden xl:inline">Usar vista</span>
@@ -226,6 +238,7 @@ export default function AoiMap({ bbox, onChange, focus, heightClass = 'h-[420px]
         >
           <BaseLayers />
           {region && <RegionFocus region={region} />}
+          {grid && <Graticule />}
           <MapRefSetter onMap={setMap} />
           <DrawHandler
             active={drawing}

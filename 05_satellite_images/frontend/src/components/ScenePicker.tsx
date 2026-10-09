@@ -14,7 +14,7 @@ interface ScenePickerProps {
 // Nubosidad dentro de la zona: el dato que decide la elección
 const cloudTone = (pct: number | null) =>
   pct === null ? 'text-muted'
-  : pct < 5   ? 'text-veg'
+  : pct < 5   ? 'text-veg-ink'
   : pct < 25  ? 'text-soil'
   :             'text-signal';
 

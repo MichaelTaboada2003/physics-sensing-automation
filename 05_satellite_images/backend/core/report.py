@@ -360,10 +360,16 @@ def render_trend_chart(session: SessionData, title: str = "") -> bytes:
         x = np.array([p["year"] for p in used], dtype=float)
         y = np.array([p["stats"]["vegetation"]["percent_clear"] / 100 * series["total_hectares"] for p in used])
         slope = trend["ha_per_year"]
-        intercept = float(np.median(y - slope * x))
         color = "#b42318" if trend["significant"] else _MUTED
         share = 100 * slope / series["total_hectares"]
-        ax.plot(x, slope * x + intercept, linestyle="--", linewidth=1.6, color=color,
+        # Recta y banda del IC 95 % pivotando en la mediana (año, ha), como en la app
+        xm, ym = float(np.median(x)), float(np.median(y))
+        xs = np.linspace(x.min(), x.max(), 50)
+        lo = ym + trend["ha_per_year_low"] * (xs - xm)
+        hi = ym + trend["ha_per_year_high"] * (xs - xm)
+        ax.fill_between(xs, np.minimum(lo, hi), np.maximum(lo, hi), color=color, alpha=0.12, linewidth=0,
+                        label="Intervalo de confianza del 95 %")
+        ax.plot(xs, ym + slope * (xs - xm), linestyle="--", linewidth=1.6, color=color,
                 label=f"Tendencia Theil-Sen: {_es(slope, 1, True)} ha/año ({_es(share, 2, True)} % del área por año)")
         verdict = ("Tendencia estadísticamente significativa" if trend["significant"]
                    else "Sin tendencia estadísticamente significativa")

@@ -60,14 +60,14 @@ export default function ClassifierMetrics({ metrics }: { metrics: Metrics }) {
                           {v.toLocaleString('es-CO')}
                         </td>
                       ))}
-                      <td className="figure text-center">{pct(metrics.per_class?.[i]?.recall)}</td>
+                      <td className="figure text-center px-1.5 whitespace-nowrap">{pct(metrics.per_class?.[i]?.recall)}</td>
                     </tr>
                   );
                 })}
                 <tr>
                   <th scope="row" className="text-left font-semibold text-ink-2 pr-2 pt-1">Precisión</th>
                   {metrics.per_class?.map(c => (
-                    <td key={c.class} className="figure text-center pt-1">{pct(c.precision)}</td>
+                    <td key={c.class} className="figure text-center pt-1 px-1.5 whitespace-nowrap">{pct(c.precision)}</td>
                   ))}
                   <td />
                 </tr>

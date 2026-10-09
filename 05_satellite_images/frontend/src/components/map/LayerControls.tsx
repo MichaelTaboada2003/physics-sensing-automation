@@ -1,3 +1,4 @@
+import { Grid3x3 } from 'lucide-react';
 import type { LayerKind } from '../../types';
 
 const KIND_LABELS: Record<LayerKind, string> = {
@@ -13,9 +14,11 @@ interface LayerControlsProps {
   onKind: (k: LayerKind) => void;
   opacity: number;
   onOpacity: (v: number) => void;
+  graticule?: boolean;
+  onGraticule?: (v: boolean) => void;
 }
 
-export default function LayerControls({ kinds, kind, onKind, opacity, onOpacity }: LayerControlsProps) {
+export default function LayerControls({ kinds, kind, onKind, opacity, onOpacity, graticule, onGraticule }: LayerControlsProps) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-3">
       <div className="segmented" role="group" aria-label="Capa del mapa">
@@ -25,6 +28,16 @@ export default function LayerControls({ kinds, kind, onKind, opacity, onOpacity 
           </button>
         ))}
       </div>
+      {onGraticule && (
+        <button
+          type="button"
+          onClick={() => onGraticule(!graticule)}
+          aria-pressed={!!graticule}
+          className={`btn !min-h-9 px-3 text-sm ${graticule ? 'btn-primary' : 'btn-secondary'}`}
+        >
+          <Grid3x3 className="w-4 h-4" /> Retícula
+        </button>
+      )}
       <label className="flex items-center gap-3 text-sm text-ink-2 sm:ml-auto">
         Opacidad
         <input

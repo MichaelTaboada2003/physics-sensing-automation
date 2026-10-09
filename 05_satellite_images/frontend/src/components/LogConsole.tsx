@@ -8,7 +8,7 @@ interface LogConsoleProps {
 
 function lineColor(stage: string): string {
   if (stage === 'error') return 'text-signal';
-  if (stage === 'done') return 'text-veg';
+  if (stage === 'done') return 'text-veg-ink';
   return 'text-ink-2';
 }
 

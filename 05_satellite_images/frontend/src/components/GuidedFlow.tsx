@@ -1,8 +1,8 @@
 import { useCallback, useState } from 'react';
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
   AlertCircle, ArrowRight, Check, Circle, Download, FileSpreadsheet, FileText,
-  Image as ImageIcon, Info, Loader2, RotateCcw, Telescope,
+  Grid3x3, Image as ImageIcon, Info, Loader2, RotateCcw, Telescope,
 } from 'lucide-react';
 import type { BBox, LayerKind, ScenesResponse, SearchResponse, StreamLine, TimeSeries, Zone } from '../types';
 import { useProgressStream } from '../hooks/useProgressStream';
@@ -141,12 +141,49 @@ export default function GuidedFlow({
 
   // ── Etapa 1: zona ──────────────────────────────────────────────────────────
   if (stage === 'zone') {
+    const pick = (p: (typeof PRESETS)[number]) => {
+      setBbox(p.bbox);
+      setZoneName(p.name);
+      setFocus(f => ({ bbox: p.bbox, n: (f?.n ?? 0) + 1 }));
+    };
+    const cta = (
+      <button onClick={run} disabled={!!zoneError} className="btn btn-primary w-full">
+        <Telescope className="w-4 h-4" />
+        Analizar {zoneName === 'Zona personalizada' ? 'esta zona' : zoneName.split(',')[0]}: últimos 10 años
+      </button>
+    );
     return (
-      <div key="zone" className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] items-start animate-fade-in pb-20 lg:pb-0">
-        <AoiMap bbox={bbox} onChange={b => { setBbox(b); setZoneName('Zona personalizada'); }} focus={focus}>
+      <div key="zone" className="grid gap-5 lg:gap-6 lg:grid-cols-[minmax(0,1fr)_320px] items-start animate-fade-in">
+        {/* Móvil: zonas en una fila desplazable y la acción, antes del mapa */}
+        <div className="lg:hidden space-y-3 min-w-0">
+          <p className="field-label">Elige un lugar o dibuja tu zona en el mapa</p>
+          <ul className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 snap-x" aria-label="Zonas de ejemplo">
+            {PRESETS.map(p => (
+              <li key={p.name} className="snap-start shrink-0">
+                <button
+                  type="button"
+                  aria-pressed={zoneName === p.name}
+                  onClick={() => pick(p)}
+                  className={`text-left rounded-[5px] border px-3 py-2 w-48 ${
+                    zoneName === p.name ? 'border-stamp bg-stamp-tint' : 'border-rule bg-paper'
+                  }`}
+                >
+                  <span className={`block text-sm font-semibold ${zoneName === p.name ? 'text-stamp-2' : ''}`}>{p.name}</span>
+                  <span className="block text-xs text-muted truncate">{p.description}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {zoneError && <p role="alert" className="text-sm text-signal font-semibold">{zoneError}</p>}
+          {cta}
+        </div>
+
+        <AoiMap bbox={bbox} onChange={b => { setBbox(b); setZoneName('Zona personalizada'); }} focus={focus} heightClass="h-[360px] lg:h-[560px]">
           <div className="hidden sm:block"><SpecimenLabel zone={{ name: zoneName, bbox }} /></div>
         </AoiMap>
-        <div className="space-y-5">
+
+        {/* Escritorio: lista vertical junto al mapa (adaptación registrada en el brief) */}
+        <div className="hidden lg:block space-y-5">
           <fieldset>
             <legend className="field-label mb-2">Elige un lugar o dibuja tu zona en el mapa</legend>
             <ul className="sheet divide-y divide-rule overflow-hidden">
@@ -155,7 +192,7 @@ export default function GuidedFlow({
                   <button
                     type="button"
                     aria-pressed={zoneName === p.name}
-                    onClick={() => { setBbox(p.bbox); setZoneName(p.name); setFocus(f => ({ bbox: p.bbox, n: (f?.n ?? 0) + 1 })); }}
+                    onClick={() => pick(p)}
                     className={`w-full text-left px-3.5 py-2.5 transition-colors ${zoneName === p.name ? 'bg-stamp-tint' : 'hover:bg-paper-2'}`}
                   >
                     <span className={`block font-semibold ${zoneName === p.name ? 'text-stamp-2' : ''}`}>{p.name}</span>
@@ -166,13 +203,7 @@ export default function GuidedFlow({
             </ul>
           </fieldset>
           {zoneError && <p role="alert" className="text-sm text-signal font-semibold">{zoneError}</p>}
-          {/* En el móvil la acción queda fija abajo, sin desplazarse por el mapa y la lista */}
-          <div className="fixed left-4 right-4 bottom-4 z-[1100] lg:static">
-            <button onClick={run} disabled={!!zoneError} className="btn btn-primary w-full shadow-[var(--shadow-lift)] lg:shadow-none">
-              <Telescope className="w-4 h-4" />
-              Analizar {zoneName === 'Zona personalizada' ? 'esta zona' : zoneName.split(',')[0]}: últimos 10 años
-            </button>
-          </div>
+          {cta}
           <p className="text-sm text-muted">Tarda alrededor de un minuto. Usamos imágenes gratuitas del satélite Sentinel-2.</p>
         </div>
       </div>
@@ -241,6 +272,7 @@ function GuidedResults({
   onOpenExpert: () => void;
 }) {
   const [layer, setLayer] = useState<LayerKind>('rgb');
+  const [grid, setGrid] = useState(false);
   const { bounds } = useLayerBounds(sessionId);
   const stats = useMapStats(sessionId, 'guided');
 
@@ -263,6 +295,24 @@ function GuidedResults({
       : null,
   }));
   const skipped = series.points.filter(p => !used.has(p.year)).map(p => p.year);
+
+  // Recta de Theil-Sen y banda del IC 95 %, pivotando en la mediana (año, hectáreas)
+  const median = (v: number[]) => {
+    const o = [...v].sort((x, y) => x - y);
+    const m = Math.floor(o.length / 2);
+    return o.length % 2 ? o[m] : (o[m - 1] + o[m]) / 2;
+  };
+  const usedPts = chart.filter(c => c.ha !== null) as { year: number; ha: number }[];
+  const xm = usedPts.length ? median(usedPts.map(c => c.year)) : 0;
+  const ym = usedPts.length ? median(usedPts.map(c => c.ha)) : 0;
+  const chartData = chart.map(c => {
+    if (!veg || !usedPts.length) return { ...c, trend: null, band: null };
+    const dx = c.year - xm;
+    const a = ym + (veg.ha_per_year_low ?? 0) * dx;
+    const b = ym + (veg.ha_per_year_high ?? 0) * dx;
+    return { ...c, trend: Math.round(ym + (veg.ha_per_year ?? 0) * dx), band: [Math.round(Math.min(a, b)), Math.round(Math.max(a, b))] };
+  });
+  const trendColor = veg?.significant ? '#b42318' : '#5f6b77';
   const others = (['water', 'mining'] as const)
     .map(k => ({ k, t: series.trends[k] }))
     .filter(o => o.t?.significant);
@@ -280,30 +330,35 @@ function GuidedResults({
     <div className="space-y-8 animate-fade-in">
       {/* Titular */}
       <section className="max-w-[72ch]">
-        {veg ? (
+        {!veg ? (
+          <p className="font-serif text-2xl">No hay suficientes años bien clasificados para estimar una tendencia en {zone.name}.</p>
+        ) : veg.significant ? (
           <p className="font-serif text-[1.5rem] sm:text-[1.75rem] leading-snug">
-            En {zone.name}, la vegetación{' '}
-            {veg.slope < 0 ? 'se redujo' : veg.slope > 0 ? 'aumentó' : 'se mantuvo'}{' '}
-            <b className={veg.significant && veg.slope < 0 ? 'text-signal' : ''}>
+            En {zone.name}, la vegetación {veg.slope < 0 ? 'se redujo' : 'aumentó'}{' '}
+            <b className={veg.slope < 0 ? 'text-signal' : ''}>
               <span className="figure">{fmt(Math.abs(veg.ha_per_year ?? 0), 0)}</span> hectáreas por año
             </b>{' '}
             entre <span className="figure">{series.years_used_for_trend[0]}</span> y <span className="figure">{current.year}</span>.
           </p>
         ) : (
-          <p className="font-serif text-2xl">No hay suficientes años despejados para estimar una tendencia en {zone.name}.</p>
+          // Sin significancia no se afirma un cambio: la cifra pasa a la línea secundaria
+          <p className="font-serif text-[1.5rem] sm:text-[1.75rem] leading-snug">
+            En {zone.name}, los datos no muestran un cambio claro de la vegetación entre{' '}
+            <span className="figure">{series.years_used_for_trend[0]}</span> y <span className="figure">{current.year}</span>.
+          </p>
         )}
         {veg && (
           <p className="mt-3 text-ink-2">
             {veg.significant
-              ? <>La tendencia es <b className="text-ink">estadísticamente significativa</b> (Mann-Kendall p = <span className="figure">{fmt(veg.p_value, 3)}</span>): es poco probable que se deba al azar.</>
-              : <>La tendencia <b className="text-ink">no es estadísticamente significativa</b> (p = <span className="figure">{fmt(veg.p_value, 3)}</span>): con estos datos no se puede afirmar que haya un cambio sostenido.</>}{' '}
+              ? <>Es una tendencia <b className="text-ink">estadísticamente significativa</b> (Mann-Kendall p = <span className="figure">{fmt(veg.p_value, 3)}</span>): es poco probable que se deba al azar.</>
+              : <>La estimación es <span className="figure">{veg.slope > 0 ? '+' : '−'}{fmt(Math.abs(veg.ha_per_year ?? 0), 0)}</span> ha por año, pero <b className="text-ink">no es estadísticamente significativa</b> (Mann-Kendall p = <span className="figure">{fmt(veg.p_value, 3)}</span>): puede deberse al azar.</>}{' '}
             Con un 95 % de confianza, el cambio anual está entre <span className="figure">{fmt(veg.ha_per_year_low, 0)}</span> y{' '}
             <span className="figure">{fmt(veg.ha_per_year_high, 0)}</span> ha.
           </p>
         )}
         {others.length > 0 && (
           <p className="mt-2 text-ink-2">
-            También cambió de forma significativa{' '}
+            Sí cambió de forma significativa{' '}
             {others.map((o, i) => (
               <span key={o.k}>
                 {i > 0 && ' y '}
@@ -322,6 +377,9 @@ function GuidedResults({
             <button aria-pressed={layer === 'class'} onClick={() => setLayer('class')}>Clasificación</button>
             <button aria-pressed={layer === 'change'} onClick={() => setLayer('change')}>Cambios</button>
           </div>
+          <button type="button" onClick={() => setGrid(g => !g)} aria-pressed={grid} className={`btn !min-h-9 px-3 text-sm ${grid ? 'btn-primary' : 'btn-secondary'}`}>
+            <Grid3x3 className="w-4 h-4" /> Retícula
+          </button>
           <MapLegend kind={layer} />
         </div>
         {bounds && (layer === 'change' ? (
@@ -329,10 +387,11 @@ function GuidedResults({
             bounds={bounds}
             after={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=change&year=${base.year}`, label: 'Cambios' }}
             opacity={0.9}
+            graticule={grid}
             height="h-[440px] lg:h-[580px]"
           >
             <div className="hidden sm:block">
-              <SpecimenLabel zone={zone} scene={sceneInfo} cloudFraction={stats?.cloud_fraction} classes={stats?.classes} slips={slips} vegetationTrend={veg} defaultCollapsed />
+              <SpecimenLabel zone={zone} scene={sceneInfo} cloudFraction={stats?.cloud_fraction} classes={stats?.classes} slips={slips} vegetationTrend={veg} maxSlips={2} />
             </div>
           </SwipeMap>
         ) : (
@@ -341,10 +400,11 @@ function GuidedResults({
             before={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=${layer}&year=${base.year}`, label: String(base.year) }}
             after={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=${layer}`, label: String(current.year) }}
             opacity={1}
+            graticule={grid}
             height="h-[440px] lg:h-[580px]"
           >
             <div className="hidden sm:block">
-              <SpecimenLabel zone={zone} scene={sceneInfo} cloudFraction={stats?.cloud_fraction} classes={stats?.classes} slips={slips} vegetationTrend={veg} defaultCollapsed />
+              <SpecimenLabel zone={zone} scene={sceneInfo} cloudFraction={stats?.cloud_fraction} classes={stats?.classes} slips={slips} vegetationTrend={veg} maxSlips={2} />
             </div>
           </SwipeMap>
         ))}
@@ -353,27 +413,42 @@ function GuidedResults({
         </p>
       </section>
 
+      {/* En móvil la etiqueta con sus fichas va debajo del mapa */}
+      <div className="sm:hidden">
+        <SpecimenLabel zone={zone} scene={sceneInfo} cloudFraction={stats?.cloud_fraction} classes={stats?.classes} slips={slips} vegetationTrend={veg} />
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
         {/* Evolución */}
         <figure className="sheet p-4">
           <figcaption className="mb-3">
             <span className="block font-semibold">Hectáreas de vegetación por año</span>
+            <span className="block text-sm text-ink-2">
+              {veg
+                ? <>Línea discontinua: tendencia de Theil-Sen ({veg.significant ? 'significativa' : 'no significativa'}, p = <span className="figure">{fmt(veg.p_value, 3)}</span>); franja: intervalo de confianza del 95 %.</>
+                : 'Sin años suficientes para estimar una tendencia.'}
+            </span>
             <span className="block text-sm text-muted">
               Estimadas sobre el área sin nubes · eje desde cero
               {skipped.length > 0 && <> · sin datos suficientes: <span className="figure">{skipped.join(', ')}</span></>}
             </span>
           </figcaption>
-          <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={chart} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
+          <ResponsiveContainer width="100%" height={280}>
+            <ComposedChart data={chartData} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
               <CartesianGrid stroke="#e1e5dc" vertical={false} />
               <XAxis dataKey="year" tick={{ fill: '#3d4856', fontSize: 12, fontFamily: 'Courier Prime, monospace' }} tickLine={false} axisLine={{ stroke: '#aab3a6' }} />
               <YAxis domain={[0, 'auto']} tick={{ fill: '#3d4856', fontSize: 12, fontFamily: 'Courier Prime, monospace' }} tickLine={false} axisLine={false} tickFormatter={v => Number(v).toLocaleString('es-CO')} width={56} />
               <Tooltip
                 contentStyle={{ background: '#fbfcf8', border: '1px solid #cdd3c8', borderRadius: 4, fontSize: 13 }}
-                formatter={v => [`${Number(v).toLocaleString('es-CO')} ha`, 'Vegetación']}
+                formatter={(v, name) => {
+                  if (name === 'band' && Array.isArray(v)) return [`${Number(v[0]).toLocaleString('es-CO')} – ${Number(v[1]).toLocaleString('es-CO')} ha`, 'IC 95 %'];
+                  return [`${Number(v).toLocaleString('es-CO')} ha`, name === 'trend' ? 'Tendencia' : 'Vegetación'];
+                }}
               />
+              <Area dataKey="band" stroke="none" fill={trendColor} fillOpacity={0.12} isAnimationActive={false} />
+              <Line dataKey="trend" stroke={trendColor} strokeWidth={1.5} strokeDasharray="6 4" dot={false} isAnimationActive={false} />
               <Line dataKey="ha" stroke="#16a34a" strokeWidth={2} dot={{ r: 4, strokeWidth: 2, stroke: '#fbfcf8', fill: '#16a34a' }} connectNulls={false} isAnimationActive={false} />
-            </LineChart>
+            </ComposedChart>
           </ResponsiveContainer>
         </figure>
 
