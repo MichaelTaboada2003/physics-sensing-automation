@@ -1,6 +1,6 @@
 # 05 — Imágenes Satelitales — Clasificación de Cobertura Terrestre
 
-Aplicación web que lleva el flujo del notebook `actividad.ipynb` a una interfaz interactiva. Consulta imágenes **Sentinel-2 L2A** del catálogo STAC de Microsoft Planetary Computer, descarga las bandas espectrales necesarias, calcula índices (NDVI, BSI, NDWI), entrena un clasificador **Random Forest** con pseudo-etiquetado y genera un mapa clasificado de cobertura terrestre (Vegetación / Agua / Minería / No clasificado).
+Aplicación web que lleva el flujo del notebook `actividad.ipynb` a una interfaz interactiva. Consulta imágenes **Sentinel-2 L2A** del catálogo STAC de Microsoft Planetary Computer, descarga 9 bandas espectrales y la máscara de nubes (SCL), calcula 7 índices, entrena un clasificador **Random Forest** con pseudo-etiquetado y genera un mapa de cobertura terrestre (Vegetación / Agua / Minería / Sin datos). Permite comparar la zona con cualquier año de la última década, calcular la serie temporal completa con tendencias y exportar un reporte.
 
 ---
 
@@ -10,27 +10,35 @@ Aplicación web que lleva el flujo del notebook `actividad.ipynb` a una interfaz
 05_satellite_images/
 ├── backend/              # FastAPI — puerto 8004
 │   ├── main.py
-│   ├── session_store.py  # Sesiones en memoria con TTL 60 min
+│   ├── session_store.py  # Sesiones en memoria (TTL 60 min) + búsquedas de escenas (TTL 30 min)
 │   ├── requirements.txt
-│   └── core/
-│       ├── search.py     # Búsqueda STAC
-│       ├── bands.py      # Descarga windowed + True Color Preview
-│       ├── indices.py    # NDVI, BSI, NDWI
-│       ├── classifier.py # Pseudo-etiquetado + Random Forest
-│       └── export.py     # PNG clasificado + GeoTIFF
-├── frontend/             # React + TypeScript + Vite + Tailwind — puerto 5177
+│   ├── core/
+│   │   ├── sentinel.py   # Lectura de assets, DN → reflectancia, máscara SCL, grillas
+│   │   ├── search.py     # Búsqueda STAC + ranking por nubes dentro del bbox
+│   │   ├── bands.py      # Descarga paralela alineada a B04 + True Color Preview
+│   │   ├── indices.py    # NDVI, BSI, NDWI, MNDWI, NDBI, EVI, SAVI
+│   │   ├── classifier.py # Pseudo-etiquetado, Random Forest y métricas hold-out
+│   │   ├── compare.py    # Comparativa por año, serie temporal, capas para el mapa
+│   │   ├── export.py     # PNG clasificado + GeoTIFF
+│   │   └── report.py     # Reporte HTML, CSV de superficies, GeoJSON de cambios
+│   └── routers/          # search, bands, indices, classifier, export, compare
+├── frontend/             # React + TypeScript + Vite + Tailwind + Leaflet + Recharts — puerto 5177
 │   └── src/
 │       ├── components/
-│       │   ├── SearchPanel.tsx      # Paso 1: configurar consulta STAC
+│       │   ├── SearchPanel.tsx      # Paso 1: zona en el mapa + selector de escenas
+│       │   ├── ScenePicker.tsx      #   miniaturas con nubosidad local
 │       │   ├── BandsPanel.tsx       # Paso 2: descargar bandas
 │       │   ├── IndicesPanel.tsx     # Paso 3: explorar índices
 │       │   ├── ClassifierPanel.tsx  # Paso 4: entrenar y predecir
-│       │   └── MapPanel.tsx         # Paso 5: ver y exportar mapa
-│       └── hooks/
-│           └── useProgressStream.ts # Consumo de streams NDJSON
-├── actividad.ipynb       # Notebook de referencia (no modificar)
-├── mapa_clasificacion_mineria.png
-└── run.sh                # Script de arranque unificado
+│       │   ├── ClassifierMetrics.tsx#   matriz de confusión + importancia de variables
+│       │   ├── MapPanel.tsx         # Paso 5: mapa interactivo y exportación
+│       │   ├── ComparePanel.tsx     # Paso 6: comparativa de un año (slider antes/después)
+│       │   ├── TimeSeriesPanel.tsx  #   serie de 10 años con tendencias
+│       │   └── map/                 # AoiMap, SwipeMap, LayerControls, capas base
+│       ├── hooks/                   # useProgressStream (NDJSON), useLayerBounds
+│       └── lib/                     # zonas de ejemplo, colores de gráficos
+├── satellite_analyzer.ipynb  # Notebook de referencia (no modificar)
+└── run.sh                    # Script de arranque unificado
 ```
 
 ## 🚀 Ejecución rápida
@@ -60,27 +68,30 @@ cd frontend
 npm install && npm run dev
 ```
 
-## 🗺️ Flujo de la Aplicación (5 pasos)
+## 🗺️ Flujo de la Aplicación (6 pasos)
 
-### Paso 1 — Búsqueda STAC
-Configura la zona de interés (Bounding Box), el rango temporal y el umbral de nubosidad. El backend consulta el catálogo de Planetary Computer y selecciona la escena Sentinel-2 con menor cobertura de nubes.
+### Paso 1 — Zona y escena
+La app está enfocada en **Colombia**: el mapa (Leaflet + Esri World Imagery) resalta el país y oscurece el resto, no permite alejarse fuera de él y el buscador (Nominatim) solo devuelve lugares colombianos. El backend rechaza zonas fuera del territorio (`core/region.py`, contorno de Natural Earth en `backend/resources/colombia.geojson`, incluye San Andrés, Providencia y Malpelo; `GET /region`). Zonas de ejemplo: El Bagre, Río Quito, Hidroituango, Cerrejón, San José del Guaviare, Ciénaga Grande. Máximo 500 km².
+`POST /scenes` lista hasta 12 escenas ordenadas por **nubosidad dentro de la zona**, medida con la capa SCL a baja resolución (la `eo:cloud_cover` del catálogo es la del tile completo de 110 × 110 km y suele engañar). Cada escena trae una miniatura recortada a la zona (`GET /scenes/thumbnail`). La escena elegida crea la sesión (`POST /search` con `search_id` + `scene_id`).
 
 ### Paso 2 — Descarga de Bandas
-Descarga las 5 bandas espectrales (B02, B03, B04, B08, B11) usando lectura por ventana (`rasterio.windows.from_bounds`). El progreso se transmite en tiempo real via NDJSON streaming. Al finalizar se muestra el **True Color Preview** (B04/B03/B02 normalizado por percentiles 2-98).
+B04 se lee en su ventana nativa (10 m) y define la grilla; las demás bandas (B02, B03, B05, B06, B07, B08, B11, B12) y la **SCL** se leen **en paralelo** reproyectadas sobre esa grilla (`WarpedVRT`). Los DN se convierten a **reflectancia de superficie**: `ρ = (DN − offset) / 10000`, con `offset = 1000` desde el processing baseline 04.00 (enero 2022). Los píxeles con nube, sombra, cirros o nieve se enmascaran.
 
 ### Paso 3 — Índices Espectrales
-Calcula y visualiza los tres índices con sus colormaps:
 
-| Índice | Fórmula | Colormap | Detecta |
-|--------|---------|----------|---------|
-| NDVI | `(B08-B04)/(B08+B04)` | RdYlGn | Vegetación |
-| BSI | `((B11+B04)-(B08+B02))/((B11+B04)+(B08+B02))` | YlOrBr | Suelo desnudo |
-| NDWI | `(B03-B08)/(B03+B08)` | Blues | Agua |
+| Índice | Fórmula | Detecta |
+|--------|---------|---------|
+| NDVI | `(B08−B04)/(B08+B04)` | Vegetación |
+| BSI | `((B11+B04)−(B08+B02))/((B11+B04)+(B08+B02))` | Suelo desnudo |
+| NDWI | `(B03−B08)/(B03+B08)` | Agua |
+| MNDWI | `(B03−B11)/(B03+B11)` | Agua (sin confundir con suelo urbano) |
+| NDBI | `(B11−B08)/(B11+B08)` | Áreas construidas |
+| EVI | `2.5(B08−B04)/(B08+6B04−7.5B02+1)` | Vegetación densa (no se satura) |
+| SAVI | `1.5(B08−B04)/(B08+B04+0.5)` | Vegetación con suelo visible |
 
 ### Paso 4 — Clasificador Random Forest
-Ajusta los umbrales de pseudo-etiquetado, previsualiza el conteo de píxeles por clase, entrena el modelo (`n_estimators=100, random_state=42`) y predice la clase de todos los píxeles. El OOB accuracy se muestra al finalizar el entrenamiento.
+Pseudo-etiquetado con umbrales (abajo): un píxel se etiqueta solo si cumple **exactamente una** regla; los que cumplen varias (p. ej. ríos con sedimento, que son "agua" y "suelo" a la vez) se descartan como ambiguos. Submuestreo **proporcional** estratificado (≤ 60 000 muestras, conservando la proporción real de cada clase con un mínimo de 1 000 para clases raras), partición hold-out estratificada 75/25 y `RandomForestClassifier(n_estimators=150)` sobre **16 variables** (7 índices + 9 bandas). Se reportan exactitud, kappa de Cohen, OOB, matriz de confusión, precisión/recall por clase e importancia de variables. La validación mide el acuerdo con las pseudo-etiquetas, no con datos de campo.
 
-**Pseudo-etiquetado por defecto:**
 ```
 Vegetación : NDVI > 0.60  AND BSI  < -0.10
 Agua        : NDWI > 0.10  AND NDVI < 0.10
@@ -88,9 +99,11 @@ Minería     : BSI  > 0.12  AND NDVI < 0.25
 ```
 
 ### Paso 5 — Mapa Clasificado
-Visualiza el mapa con leyenda integrada y descarga en dos formatos:
-- **PNG** — imagen renderizada con `ListedColormap(['green','blue','saddlebrown','black'])`
-- **GeoTIFF** — banda `int16` georreferenciada con CRS y transformación afín de la ventana
+Capa de clasificación, NDVI o color real superpuesta al mapa satelital con opacidad ajustable (`GET /layer`, `GET /layer/bounds`). Exportación: **reporte HTML** imprimible a PDF, **CSV** de superficies, **PNG** y **GeoTIFF**.
+
+### Paso 6 — Comparativa Temporal
+- **Un año** (`POST /compare`): escena de la misma temporada (±60 días; si no hay, todo el año) con menos nubes en la zona, alineada píxel a píxel y clasificada con el **mismo** modelo. Slider **antes/después** sobre el mapa (color real, clasificación, NDVI o mapa de cambios), figura comparativa, superficies y transiciones (p. ej. vegetación → minería) y **GeoJSON** de polígonos de cambio (`GET /export/changes.geojson`, manchas < 0.5 ha filtradas).
+- **Serie de 10 años** (`POST /timeseries`): procesa los años en paralelo y estima la tendencia de cada clase sobre el % del área sin nubes (solo años con ≥ 50 % de la zona despejada) con la **pendiente de Theil-Sen** (mediana de pendientes entre pares de años, robusta frente a años atípicos, con IC 95 %) y la **prueba de Mann-Kendall** (p-valor; significativa si p < 0.05). Sentinel-2 L2A tiene cobertura irregular antes de 2017.
 
 ## 🔑 Conceptos Clave
 
@@ -101,17 +114,20 @@ El modelo no necesita datos de entrenamiento externos. Usa **pseudo-etiquetado**
 Cada búsqueda crea una sesión con TTL de 60 minutos que almacena las bandas descargadas, los índices calculados, el clasificador entrenado y el mapa resultante. Esto evita re-descargas entre pasos.
 
 ### Streaming NDJSON
-Las operaciones largas (descarga, entrenamiento, predicción) transmiten su progreso como `application/x-ndjson` con líneas `{stage, progress, message}`, permitiendo actualizar la barra de progreso en tiempo real.
+Las operaciones largas (descarga, entrenamiento, predicción, comparativa, serie temporal) transmiten su progreso como `application/x-ndjson` con líneas `{stage, progress, message}`. Las tareas en segundo plano emiten un latido cada ~8 s para que el cliente no corte la conexión por silencio (30 s).
+
+### Comparabilidad entre años
+Para que un cambio en el mapa sea un cambio real en el terreno: misma temporada fenológica, misma grilla (reproyección directa), misma escala radiométrica (reflectancia con el offset propio de cada escena), mismo modelo y nubes excluidas. Las superficies se expresan también como % del área despejada para que la nubosidad de cada año no sesgue la tendencia.
 
 ## 🛠️ Stack
 
 | Capa | Tecnología |
 |------|-----------|
 | Backend | Python 3, FastAPI, rasterio, pystac-client, planetary-computer, scikit-learn, numpy, matplotlib |
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS, lucide-react |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS, Leaflet (react-leaflet), Recharts, lucide-react |
 | Datos | Sentinel-2 L2A via Microsoft Planetary Computer STAC |
 | ML | RandomForestClassifier (scikit-learn) |
-| Exportación | GeoTIFF (rasterio), PNG (matplotlib) |
+| Exportación | GeoTIFF (rasterio), PNG (matplotlib), GeoJSON (rasterio.features), HTML, CSV |
 
 ## 📦 Dependencias del Backend
 
