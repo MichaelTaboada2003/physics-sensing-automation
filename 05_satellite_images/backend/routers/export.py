@@ -17,10 +17,13 @@ Requisitos cubiertos: 7.3, 7.6, 7.7, 8.1, 8.2, 8.3, 8.4, 8.5
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
 from core.export import export_geotiff, render_classified_map
+from core.report import changes_geojson, report_html, stats_csv
 from session_store import get_session
 
 router = APIRouter()
@@ -247,4 +250,59 @@ def download_classified_tif(
         headers={
             "Content-Disposition": 'attachment; filename="mapa_clasificacion.tif"',
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Reporte y exportaciones del análisis
+# ---------------------------------------------------------------------------
+
+@router.get("/export/report.html")
+def export_report(
+    session_id: str = Query(..., description="Identificador de la sesión activa."),
+) -> Response:
+    """Reporte HTML autocontenido (imágenes embebidas), imprimible a PDF."""
+    session = _get_session_or_404(session_id)
+    _require_class_map(session, session_id)
+    try:
+        content = report_html(session)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Error al generar el reporte: {exc}") from exc
+    return Response(
+        content=content,
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": 'inline; filename="reporte_cobertura.html"'},
+    )
+
+
+@router.get("/export/stats.csv")
+def export_stats_csv(
+    session_id: str = Query(..., description="Identificador de la sesión activa."),
+) -> Response:
+    """Superficie por clase y año (escena actual + años comparados)."""
+    session = _get_session_or_404(session_id)
+    _require_class_map(session, session_id)
+    return Response(
+        content=stats_csv(session),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="superficie_por_clase.csv"'},
+    )
+
+
+@router.get("/export/changes.geojson")
+def export_changes_geojson(
+    session_id: str = Query(..., description="Identificador de la sesión activa."),
+    year: int = Query(..., description="Año comparado."),
+    min_area_ha: float = Query(0.5, ge=0, le=100, description="Área mínima por polígono (ha)."),
+) -> Response:
+    """Polígonos de cambio entre *year* y la escena actual (EPSG:4326)."""
+    session = _get_session_or_404(session_id)
+    _require_class_map(session, session_id)
+    if year not in session.comparisons:
+        raise HTTPException(status_code=409, detail=f"No hay comparativa para {year}. Ejecute POST /compare.")
+    data = changes_geojson(session, year, min_area_ha)
+    return Response(
+        content=json.dumps(data, ensure_ascii=False),
+        media_type="application/geo+json",
+        headers={"Content-Disposition": f'attachment; filename="cambios_{year}.geojson"'},
     )
