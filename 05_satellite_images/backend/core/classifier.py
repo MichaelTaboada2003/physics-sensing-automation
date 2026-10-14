@@ -22,7 +22,9 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split
 
+from core.classes import label_of, scheme, scheme_json
 from core.indices import INDEX_NAMES, SENTINEL_VALUE, compute_indices
+from core.worldcover import WorldCoverError, worldcover_labels
 from core.sentinel import BAND_SET
 from session_store import get_session
 
@@ -32,7 +34,13 @@ if TYPE_CHECKING:
 
 # Features del clasificador: índices espectrales + reflectancias
 FEATURE_NAMES: list[str] = [n.upper() for n in INDEX_NAMES] + list(BAND_SET)
-CLASS_LABELS = ["Vegetación", "Agua", "Minería"]
+# Mínimo de ejemplos para aprender una clase; por debajo, la clase se omite.
+# En zonas muy pequeñas el mínimo baja al 2 % de los píxeles etiquetados.
+MIN_CLASS_SAMPLES = 200
+
+
+def min_class_samples(total_labeled: int) -> int:
+    return min(MIN_CLASS_SAMPLES, max(10, int(np.ceil(0.02 * total_labeled))))
 
 # Submuestreo proporcional (estratificado) para acotar el tiempo de entrenamiento:
 # conserva la proporción real de cada clase, con un mínimo para clases raras.
@@ -244,9 +252,14 @@ def _proportional_subsample(
 
 
 def _evaluate(
-    clf: RandomForestClassifier, X_test: np.ndarray, y_test: np.ndarray, n_train: int
+    clf: RandomForestClassifier, X_test: np.ndarray, y_test: np.ndarray, n_train: int, method: str = "rules",
 ) -> dict:
-    """Métricas de hold-out frente a las pseudo-etiquetas + importancia de features."""
+    """Métricas de hold-out frente a las etiquetas + importancia de features.
+
+    Solo se reportan las clases que el modelo aprendió (las demás se omitieron).
+    """
+    codes = [int(c) for c in clf.classes_]
+    names = [label_of(method, c) for c in codes]
     importances = sorted(
         ({"feature": f, "importance": round(float(v), 4)}
          for f, v in zip(FEATURE_NAMES, clf.feature_importances_)),
@@ -256,23 +269,25 @@ def _evaluate(
         "oob_score": round(float(clf.oob_score_), 4),
         "n_train": int(n_train),
         "n_test": int(len(y_test)),
-        "classes": CLASS_LABELS,
+        "classes": names,
+        "class_codes": codes,
+        "method": method,
         "feature_importances": importances,
     }
     if len(y_test):
         y_pred = clf.predict(X_test)
         precision, recall, f1, support = precision_recall_fscore_support(
-            y_test, y_pred, labels=[0, 1, 2], zero_division=0
+            y_test, y_pred, labels=codes, zero_division=0
         )
         metrics.update({
             "accuracy": round(float(accuracy_score(y_test, y_pred)), 4),
             "kappa": round(float(cohen_kappa_score(y_test, y_pred)), 4),
-            "confusion_matrix": confusion_matrix(y_test, y_pred, labels=[0, 1, 2]).tolist(),
+            "confusion_matrix": confusion_matrix(y_test, y_pred, labels=codes).tolist(),
             "per_class": [
-                {"class": CLASS_LABELS[i], "precision": round(float(precision[i]), 4),
+                {"class": names[i], "precision": round(float(precision[i]), 4),
                  "recall": round(float(recall[i]), 4), "f1": round(float(f1[i]), 4),
                  "support": int(support[i])}
-                for i in range(3)
+                for i in range(len(codes))
             ],
         })
     return metrics
@@ -283,7 +298,7 @@ def _evaluate(
 # ---------------------------------------------------------------------------
 
 def train_stream(
-    session_id: str, rules: ThresholdRules
+    session_id: str, rules: ThresholdRules | None = None, method: str = "rules",
 ) -> Generator[str, None, None]:
     """Entrena un RandomForestClassifier y emite líneas NDJSON de progreso.
 
@@ -293,9 +308,16 @@ def train_stream(
     3. Línea final ``stage="done"`` con ``classifier_id`` y ``oob_score``.
        Si hay < 100 píxeles etiquetados, incluye campo ``warning``.
 
+    ``method`` elige la fuente de etiquetas: ``rules`` (umbrales del curso) o
+    ``worldcover`` (ESA WorldCover 2021, con clases urbano y bosque/pastos).
+
+    Las clases con menos de ``MIN_CLASS_SAMPLES`` ejemplos se omiten (p. ej. una
+    ciudad sin agua): el modelo aprende las demás en vez de fallar o de aprender
+    una clase a partir de un puñado de píxeles ruidosos.
+
     Emite ``stage="error"`` y cierra si:
     - La sesión no existe.
-    - No hay al menos un píxel por clase tras filtrar NaN/Inf.
+    - Quedan menos de dos clases con ejemplos suficientes.
 
     Requisitos: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 10.1, 10.2, 10.3, 10.4, 10.5
     """
@@ -327,69 +349,72 @@ def train_stream(
         return
 
     # ------------------------------------------------------------------
-    # 3. Aplicar ThresholdRules para generar etiquetas
+    # 3. Etiquetas: reglas de umbral o WorldCover
     # ------------------------------------------------------------------
-    ndvi_valid = session.indices["ndvi"][valid]
-    bsi_valid = session.indices["bsi"][valid]
-    ndwi_valid = session.indices["ndwi"][valid]
+    n_ambiguous = 0
+    if method == "worldcover":
+        yield _ndjson({"stage": "preparing", "progress": 0.05, "message": "Leyendo ESA WorldCover 2021 sobre la zona…"})
+        try:
+            wc = worldcover_labels(session.bbox, session.crs, session.transform, valid.shape)
+        except WorldCoverError as exc:
+            yield _ndjson({"stage": "error", "progress": 0.05, "message": str(exc), "error": str(exc)})
+            return
+        labels = wc[valid]
+    else:
+        rules = rules or ThresholdRules()
+        # Etiquetas: 0=Veg, 1=Agua, 2=Minería; -1=sin etiqueta o ambigua (se descarta)
+        labels, ambiguous = pseudo_labels(
+            session.indices["ndvi"][valid], session.indices["bsi"][valid], session.indices["ndwi"][valid], rules
+        )
+        n_ambiguous = int(np.count_nonzero(ambiguous))
 
-    # Etiquetas: 0=Veg, 1=Agua, 2=Minería; -1=sin etiqueta o ambigua (se descarta)
-    labels, ambiguous = pseudo_labels(ndvi_valid, bsi_valid, ndwi_valid, rules)
-    n_ambiguous = int(np.count_nonzero(ambiguous))
-
-    # Descartar píxeles sin etiqueta
+    classes = scheme(method)
     labeled_mask = labels >= 0
     X_train = X_flat[labeled_mask]
     y_train = labels[labeled_mask]
-
-    n_veg = int(np.sum(y_train == 0))
-    n_water = int(np.sum(y_train == 1))
-    n_mining = int(np.sum(y_train == 2))
+    counts = {c.key: int(np.count_nonzero(y_train == c.code)) for c in classes}
     total_labeled = len(y_train)
 
     # ------------------------------------------------------------------
-    # 4. Línea inicial con conteo por clase (Req 6.3)
+    # 4. Línea inicial con conteo por clase
     # ------------------------------------------------------------------
     yield _ndjson({
         "stage": "preparing",
         "progress": 0.1,
         "message": (
-            f"Píxeles etiquetados — Vegetación: {n_veg}, "
-            f"Agua: {n_water}, Minería: {n_mining}. "
-            f"Total: {total_labeled}. Descartados por ambiguos: {n_ambiguous}."
+            "Píxeles etiquetados — " + ", ".join(f"{c.label}: {counts[c.key]}" for c in classes)
+            + f". Total: {total_labeled}."
+            + (f" Descartados por ambiguos: {n_ambiguous}." if method == "rules" else "")
         ),
-        "vegetation": n_veg,
-        "water": n_water,
-        "mining": n_mining,
+        **counts,
         "total_labeled": total_labeled,
         "ambiguous": n_ambiguous,
     })
 
     # ------------------------------------------------------------------
-    # 5. Verificar al menos un píxel por clase (Req 6.6)
+    # 5. Omitir clases con muy pocos ejemplos; hacen falta al menos dos clases
     # ------------------------------------------------------------------
-    missing_classes = []
-    if n_veg == 0:
-        missing_classes.append("Vegetación")
-    if n_water == 0:
-        missing_classes.append("Agua")
-    if n_mining == 0:
-        missing_classes.append("Minería")
-
-    if missing_classes:
+    min_n = min_class_samples(total_labeled)
+    dropped = [c for c in classes if 0 < counts[c.key] < min_n]
+    absent = [c for c in classes if counts[c.key] == 0]
+    kept_codes = [c.code for c in classes if counts[c.key] >= min_n]
+    if dropped or absent:
+        notes = [f"{c.label} ({counts[c.key]} píxeles, muy pocos)" for c in dropped]
+        notes += [f"{c.label} (no aparece)" for c in absent]
         yield _ndjson({
-            "stage": "error",
-            "progress": 0.1,
-            "message": (
-                f"No hay píxeles etiquetados para: {', '.join(missing_classes)}. "
-                "Amplíe los umbrales antes de entrenar."
-            ),
-            "error": (
-                f"Clases sin muestras: {', '.join(missing_classes)}. "
-                "Se requiere al menos un píxel por clase."
-            ),
+            "stage": "preparing",
+            "progress": 0.15,
+            "message": "Se entrena sin: " + "; ".join(notes) + ". Esos píxeles se asignarán a las demás clases.",
         })
+    if len(kept_codes) < 2:
+        msg = ("Hacen falta al menos dos clases con ejemplos suficientes "
+               f"(≥ {min_n} píxeles) para entrenar.")
+        if method == "rules":
+            msg += " Amplíe los umbrales o pruebe el método WorldCover."
+        yield _ndjson({"stage": "error", "progress": 0.15, "message": msg, "error": msg})
         return
+    keep_mask = np.isin(y_train, kept_codes)
+    X_train, y_train = X_train[keep_mask], y_train[keep_mask]
 
     # ------------------------------------------------------------------
     # 6. Submuestreo proporcional + partición hold-out estratificada
@@ -398,7 +423,7 @@ def train_stream(
     keep = _proportional_subsample(y_train, MAX_TRAIN_SAMPLES, MIN_SAMPLES_PER_CLASS, rng)
     X_bal, y_bal = X_train[keep], y_train[keep]
 
-    can_split = min(n_veg, n_water, n_mining) >= 4
+    can_split = min(int(np.count_nonzero(y_train == k)) for k in kept_codes) >= 4
     if can_split:
         X_fit, X_test, y_fit, y_test = train_test_split(
             X_bal, y_bal, test_size=TEST_FRACTION, stratify=y_bal, random_state=42
@@ -447,7 +472,7 @@ def train_stream(
         "progress": 0.9,
         "message": f"Entrenamiento completado. OOB accuracy: {oob_score:.4f}. Evaluando…",
     })
-    metrics = _evaluate(clf, X_test, y_test, len(y_fit))
+    metrics = _evaluate(clf, X_test, y_test, len(y_fit), method)
 
     # ------------------------------------------------------------------
     # 9. Almacenar clasificador en la sesión (Req 6.2)
@@ -456,6 +481,7 @@ def train_stream(
     session.classifier = clf
     session.classifier_id = classifier_id
     session.classifier_metrics = metrics
+    session.class_scheme = method
 
     # ------------------------------------------------------------------
     # 10. Línea final (Req 6.3, 10.4)
@@ -470,6 +496,8 @@ def train_stream(
         "classifier_id": classifier_id,
         "oob_score": oob_score,
         "metrics": metrics,
+        "method": method,
+        "classes": scheme_json(method),
     }
 
     # Advertencia si hay menos de 100 píxeles etiquetados (Req 6.4)

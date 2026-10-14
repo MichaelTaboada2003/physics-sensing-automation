@@ -340,3 +340,45 @@ def test_timeseries_summary_reuses_processed_years():
     with patch.object(compare, "best_scene", side_effect=AssertionError("no debe buscar escenas")):
         summary = client.get("/timeseries/summary", params={"session_id": sid}).json()
     assert [p["year"] for p in summary["points"]] == [2020, 2026] and summary["failed"] == []
+
+
+def test_train_without_water_drops_class_instead_of_failing():
+    sid, session = _make_session()
+    session.class_map = None
+    session.classifier = None
+    rng = np.random.default_rng(2)
+    for b in session.bands:
+        session.bands[b][:] = 0.1
+    session.bands["B08"][:12] = 0.5            # vegetación
+    session.bands["B11"][12:] = 0.4            # suelo; no hay agua
+    for b in session.bands:
+        session.bands[b] += rng.normal(0, 0.003, SHAPE).astype(np.float32)
+    session.indices = {}
+    rules = ThresholdRules(ndvi_veg_min=0.3, bsi_veg_max=0.0, ndwi_water_min=0.2, ndvi_water_max=0.1,
+                           bsi_mining_min=0.0, ndvi_mining_max=0.25)
+    lines = [json.loads(l) for l in train_stream(sid, rules)]
+    assert lines[-1]["stage"] == "done", lines[-1]
+    assert any("Se entrena sin: Agua" in l["message"] for l in lines)
+    assert lines[-1]["metrics"]["class_codes"] == [0, 2]
+    assert session.class_scheme == "rules"
+
+
+def test_train_worldcover_uses_scheme_with_urban_and_forest():
+    from core import classifier
+    sid, session = _make_session()
+    session.class_map = None
+    session.classifier = None
+    wc = np.zeros(SHAPE, dtype=np.int16)        # bosque
+    wc[:, 6:12] = 3                              # urbano
+    wc[:, 12:18] = 4                             # pastos
+    wc[:, 18:] = 1                               # agua
+    for k, cols in ((0, slice(0, 6)), (3, slice(6, 12)), (4, slice(12, 18)), (1, slice(18, 24))):
+        session.bands["B08"][:, cols] = 0.1 + 0.08 * k
+    session.indices = {}
+    with patch.object(classifier, "worldcover_labels", return_value=wc):
+        lines = [json.loads(l) for l in train_stream(sid, None, "worldcover")]
+    done = lines[-1]
+    assert done["stage"] == "done", done
+    assert done["method"] == "worldcover" and session.class_scheme == "worldcover"
+    assert set(done["metrics"]["classes"]) == {"Bosque", "Agua", "Urbano / construido", "Pastos y cultivos"}
+    assert [c["key"] for c in done["classes"]] == ["forest", "water", "mining", "urban", "grass"]

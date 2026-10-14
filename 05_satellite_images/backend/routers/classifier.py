@@ -18,7 +18,7 @@ Requisitos cubiertos: 5.3, 5.4, 5.5, 5.6, 5.7, 6.1–6.6, 7.1–7.5
 from __future__ import annotations
 
 import concurrent.futures
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -121,15 +121,20 @@ class ThresholdPreviewRequest(BaseModel):
 
 
 class TrainRequest(BaseModel):
-    """Body del endpoint POST /train."""
+    """Body del endpoint POST /train.
+
+    ``method``: ``rules`` (umbrales del curso, requiere los seis umbrales; si
+    faltan se usan los del notebook) o ``worldcover`` (etiquetas ESA WorldCover).
+    """
 
     session_id: str
-    ndvi_veg_min: float
-    bsi_veg_max: float
-    ndwi_water_min: float
-    ndvi_water_max: float
-    bsi_mining_min: float
-    ndvi_mining_max: float
+    method: Literal["rules", "worldcover"] = "rules"
+    ndvi_veg_min: float = ThresholdRules.ndvi_veg_min
+    bsi_veg_max: float = ThresholdRules.bsi_veg_max
+    ndwi_water_min: float = ThresholdRules.ndwi_water_min
+    ndvi_water_max: float = ThresholdRules.ndvi_water_max
+    bsi_mining_min: float = ThresholdRules.bsi_mining_min
+    ndvi_mining_max: float = ThresholdRules.ndvi_mining_max
 
 
 class PredictRequest(BaseModel):
@@ -291,7 +296,7 @@ def train(request: TrainRequest) -> StreamingResponse:
     )
 
     return StreamingResponse(
-        train_stream(request.session_id, rules),
+        train_stream(request.session_id, rules, request.method),
         media_type="application/x-ndjson",
     )
 

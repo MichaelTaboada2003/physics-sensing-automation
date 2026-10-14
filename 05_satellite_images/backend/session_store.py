@@ -24,6 +24,7 @@ class SessionData:
     classifier: Optional[RandomForestClassifier] = None
     classifier_id: Optional[str] = None
     classifier_metrics: Optional[dict] = None
+    class_scheme: str = "rules"                # «rules» o «worldcover» (core/classes.py)
     class_map: Optional[np.ndarray] = None
     comparisons: dict = field(default_factory=dict)  # {year: {"scene": {...}, "bands": {...}, "class_map": ...}}
     created_at: datetime = field(default_factory=datetime.utcnow)
