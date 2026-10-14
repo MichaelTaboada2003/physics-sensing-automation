@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
   AlertCircle, ArrowRight, Check, Circle, Download, FileSpreadsheet, FileText,
-  Grid3x3, Image as ImageIcon, Info, Loader2, RotateCcw, Telescope,
+  CalendarRange, Grid3x3, Image as ImageIcon, Info, Loader2, Map as MapIcon, Microscope, Newspaper, RotateCcw,
+  Telescope, Thermometer,
 } from 'lucide-react';
 import type { BBox, LayerKind, ScenesResponse, SearchResponse, StreamLine, TimeSeries, Zone } from '../types';
 import { useProgressStream } from '../hooks/useProgressStream';
@@ -14,9 +15,14 @@ import AoiMap from './map/AoiMap';
 import SwipeMap from './map/SwipeMap';
 import MapLegend from './MapLegend';
 import GuidedHeat from './heat/GuidedHeat';
+import GuidedMethod from './GuidedMethod';
+import MapPanel from './MapPanel';
+import ComparePanel from './ComparePanel';
 import SpecimenLabel from './SpecimenLabel';
 import type { DeterminationSlip } from './SpecimenLabel';
+import { baseYear } from '../lib/guided';
 import type { GuidedRun, GuidedStage, TaskId } from '../lib/guided';
+import { HEAT_FIRST_YEAR } from '../lib/heat';
 
 // ── Tipos y constantes ─────────────────────────────────────────────────────────
 
@@ -28,6 +34,7 @@ const TASKS: { id: TaskId; label: string; detail: string }[] = [
   { id: 'train', label: 'Aprender a reconocer la cobertura', detail: 'Bosque, pastos y cultivos, agua, suelo expuesto y zonas urbanas, con ejemplos del mapa ESA WorldCover.' },
   { id: 'map', label: 'Clasificar la zona', detail: 'Cada píxel de 10 × 10 m recibe una clase.' },
   { id: 'series', label: 'Revisar los 10 años anteriores', detail: 'La misma temporada de cada año, clasificada con el mismo modelo.' },
+  { id: 'heat', label: 'Medir la temperatura', detail: 'Landsat 8/9 en el año base y hoy, para ver si lo deforestado se calentó.' },
 ];
 
 const LAST_YEAR = new Date().getFullYear() - 1;
@@ -86,6 +93,18 @@ export default function GuidedFlow({
 
   const finish = (t: TaskId) => setRun(r => ({ ...r, done: [...r.done, t] }));
 
+  /** Temperatura contra el año base. No es fatal: si Landsat falla, la pestaña Calor permite reintentar. */
+  const runHeat = async (sid: string, s: TimeSeries | null) => {
+    if (!s) return;
+    setRun(r => ({ ...r, current: 'heat', message: '' }));
+    try {
+      await stream(`${API_BASE}/heat`, { session_id: sid, year: Math.max(baseYear(s), HEAT_FIRST_YEAR) });
+    } catch {
+      /* se ofrece de nuevo en la pestaña Calor */
+    }
+    setRun(r => ({ ...r, current: null, done: [...r.done, 'heat'] }));
+  };
+
   /** Solo el último paso: la serie de 10 años sobre una sesión ya clasificada (p. ej. del modo experto). */
   const runSeriesOnly = async (sid: string) => {
     onStage('running');
@@ -93,6 +112,7 @@ export default function GuidedFlow({
     try {
       const last = await stream(`${API_BASE}/timeseries`, { session_id: sid, years_back: 10 });
       setRun(r => ({ ...r, series: last.series ?? null, seriesSession: sid, current: null, done: [...r.done, 'series'] }));
+      await runHeat(sid, last.series ?? null);
       onStage('results');
     } catch (e) {
       setRun(r => ({ ...r, current: null, error: { task: 'series', text: e instanceof Error ? e.message : 'Error inesperado.' } }));
@@ -172,6 +192,9 @@ export default function GuidedFlow({
       setRun(r => ({ ...r, series: last.series ?? null, seriesSession: session.session_id }));
       finish(task);
       setCurrent(null);
+
+      // 6. Temperatura (no fatal)
+      await runHeat(session.session_id, last.series ?? null);
       onStage('results');
     } catch (e) {
       setError({ task, text: e instanceof Error ? e.message : 'Error inesperado.' });
@@ -306,6 +329,16 @@ export default function GuidedFlow({
 
 // ── Resultados ─────────────────────────────────────────────────────────────────
 
+type ResultTab = 'summary' | 'map' | 'compare' | 'heat' | 'method';
+
+const RESULT_TABS: { id: ResultTab; label: string; icon: typeof Info }[] = [
+  { id: 'summary', label: 'Resumen', icon: Newspaper },
+  { id: 'map', label: 'Mapa', icon: MapIcon },
+  { id: 'compare', label: 'Comparar años', icon: CalendarRange },
+  { id: 'heat', label: 'Calor', icon: Thermometer },
+  { id: 'method', label: 'Cómo se hizo', icon: Microscope },
+];
+
 function GuidedResults({
   sessionId, zone, sceneInfo, series, onRestart, onOpenExpert,
 }: {
@@ -316,6 +349,7 @@ function GuidedResults({
   onRestart: () => void;
   onOpenExpert: () => void;
 }) {
+  const [tab, setTab] = useState<ResultTab>('summary');
   const [layer, setLayer] = useState<LayerKind>('rgb');
   const [grid, setGrid] = useState(false);
   const { bounds } = useLayerBounds(sessionId);
@@ -327,9 +361,7 @@ function GuidedResults({
 
   const current = series.points[series.points.length - 1];
   const used = new Set(series.years_used_for_trend);
-  // Año base: el primero bien clasificado desde 2017 (antes, Sentinel-2 L2A es irregular)
-  const candidates = series.points.filter(p => used.has(p.year) && p.year !== current.year);
-  const base = candidates.find(p => p.year >= 2017) ?? candidates[0] ?? series.points[0];
+  const base = series.points.find(p => p.year === baseYear(series))!;
   const defs = series.classes ?? RULES_DEFS;
   const main = defs[0];
   const mainPhrase = phrase(main);
@@ -372,8 +404,8 @@ function GuidedResults({
   }));
   const title = encodeURIComponent(zone.name);
 
-  return (
-    <div className="space-y-8 animate-fade-in">
+  const summaryView = (
+    <div className="space-y-8">
       {/* Titular */}
       <section className="max-w-[72ch]">
         {!veg ? (
@@ -525,9 +557,6 @@ function GuidedResults({
         </section>
       </div>
 
-      {/* Calor: temperatura de superficie con Landsat */}
-      {sessionId && <GuidedHeat sessionId={sessionId} year={base.year} bounds={bounds} />}
-
       {/* Qué mide y qué no */}
       <section className="sheet p-4 max-w-[80ch]" aria-labelledby="limits-title">
         <h2 id="limits-title" className="flex items-center gap-2 font-semibold">
@@ -549,9 +578,51 @@ function GuidedResults({
         </ul>
       </section>
 
+    </div>
+  );
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* Mismo contenido que el modo experto, organizado por pestañas */}
+      <div className="-mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto">
+        <div className="segmented" role="tablist" aria-label="Resultados">
+          {RESULT_TABS.map(t => (
+            <button
+              key={t.id}
+              role="tab"
+              id={`tab-${t.id}`}
+              aria-selected={tab === t.id}
+              aria-controls="guided-tabpanel"
+              onClick={() => setTab(t.id)}
+              className="inline-flex items-center gap-2 whitespace-nowrap"
+            >
+              <t.icon className="w-4 h-4" aria-hidden />
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div id="guided-tabpanel" role="tabpanel" aria-labelledby={`tab-${tab}`} key={tab} className="animate-fade-in">
+        {tab === 'summary' && summaryView}
+        {tab === 'map' && <MapPanel sessionId={sessionId} zone={zone} sceneInfo={sceneInfo} />}
+        {tab === 'compare' && (
+          <ComparePanel
+            sessionId={sessionId}
+            sceneYear={current.year}
+            zone={zone}
+            sceneInfo={sceneInfo}
+            initialSeries={series}
+            initialYear={base.year}
+          />
+        )}
+        {tab === 'heat' && <GuidedHeat sessionId={sessionId} year={base.year} bounds={bounds} />}
+        {tab === 'method' && <GuidedMethod sessionId={sessionId} sceneInfo={sceneInfo} onOpenExpert={onOpenExpert} />}
+      </div>
+
       <div className="flex flex-wrap gap-3 border-t border-rule pt-6">
         <button onClick={onOpenExpert} className="btn btn-secondary">
-          Ver el análisis completo en modo experto <ArrowRight className="w-4 h-4" />
+          Ajustar parámetros en modo experto <ArrowRight className="w-4 h-4" />
         </button>
         <button onClick={onRestart} className="btn btn-quiet">
           <RotateCcw className="w-4 h-4" /> Analizar otra zona

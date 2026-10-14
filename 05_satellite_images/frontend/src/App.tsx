@@ -98,11 +98,11 @@ const GUIDED_STAGES: { id: GuidedStage; label: string; title: string; purpose: s
   },
   {
     id: 'running', label: 'Análisis', title: 'Analizando la zona',
-    purpose: 'Descargamos imágenes de satélite, aprendemos a reconocer la cobertura y la comparamos año por año.',
+    purpose: 'Descargamos imágenes de satélite, aprendemos a reconocer la cobertura, la comparamos año por año y medimos su temperatura.',
   },
   {
     id: 'results', label: 'Resultados', title: 'Resultados',
-    purpose: 'La tendencia del bosque y de las demás coberturas, con su incertidumbre, y el material listo para publicar.',
+    purpose: 'Lo mismo que el modo experto, con los parámetros elegidos automáticamente: tendencia, mapas, comparaciones, calor y cómo se hizo.',
   },
 ];
 
