@@ -73,7 +73,7 @@ npm install && npm run dev
 
 ## 🧭 Dos modos
 
-- **Guiado** (para periodistas y no especialistas): eliges una zona y un solo botón ejecuta todo el análisis (escena más despejada del último año → bandas → modelo con las reglas por defecto → mapa → serie de 10 años). El resultado es una frase con la tendencia de la vegetación, su intervalo de confianza y su significancia; un mapa antes/después; el gráfico de hectáreas por año; las descargas listas para publicar (imagen antes/después y gráfico de tendencia con el crédito de Copernicus, CSV, reporte) y un recuadro con lo que la herramienta mide y lo que no.
+- **Guiado** (para periodistas y no especialistas): mismo contenido que el modo experto, con los parámetros elegidos automáticamente. Eliges una zona y un solo botón ejecuta todo (escena más despejada del último año → bandas → modelo con WorldCover → mapa → serie de 10 años → temperatura con Landsat). Los resultados se organizan en pestañas: **Resumen** (frase con la tendencia del bosque, su IC y significancia, antes/después, gráfico, descargas y límites), **Mapa** (clasificación, NDVI, color real y exportaciones), **Comparar años** (año a año con transiciones y la serie completa de todas las clases), **Calor** y **Cómo se hizo** (parámetros automáticos, imagen e índices, métricas del modelo).
 - **Experto**: los 7 pasos con todos los parámetros. La sesión es la misma: «Ver el análisis completo» abre en modo experto lo calculado en modo guiado.
 
 El selector está arriba del riel lateral y se recuerda en el navegador.
