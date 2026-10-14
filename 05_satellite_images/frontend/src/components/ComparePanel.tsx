@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { LayerKind, TimeSeries } from '../types';
 import { useLayerBounds } from '../hooks/useLayerBounds';
 import SwipeMap from './map/SwipeMap';
@@ -35,6 +35,10 @@ interface ComparePanelProps {
   sceneYear: number;
   zone: Zone | null;
   sceneInfo: { id: string; datetime: string } | null;
+  /** Serie ya calculada (modo guiado). */
+  initialSeries?: TimeSeries | null;
+  /** Año ya procesado que se muestra al abrir. */
+  initialYear?: number;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -46,10 +50,10 @@ const signed = (n: number, digits = 1) =>
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo }: ComparePanelProps) {
+export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo, initialSeries = null, initialYear }: ComparePanelProps) {
   const years = Array.from({ length: MAX_YEARS_BACK }, (_, i) => sceneYear - 1 - i);
 
-  const [selectedYear, setSelectedYear] = useState<number>(sceneYear - 5);
+  const [selectedYear, setSelectedYear] = useState<number>(initialYear ?? sceneYear - 5);
   const [status, setStatus] = useState<CompareStatus>('idle');
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<StreamLine[]>([]);
@@ -57,7 +61,7 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo }: 
   const [results, setResults] = useState<Record<number, ComparisonSummary>>({});
   const [activeYear, setActiveYear] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>('year');
-  const [series, setSeries] = useState<TimeSeries | null>(null);
+  const [series, setSeries] = useState<TimeSeries | null>(initialSeries);
   const [layerKind, setLayerKind] = useState<LayerKind>('rgb');
   const [grid, setGrid] = useState(false);
   const [opacity, setOpacity] = useState(1);
@@ -86,6 +90,23 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo }: 
       setActiveYear(year);
     }
   };
+
+  // Abre directamente el año ya procesado (p. ej. el año base del modo guiado)
+  useEffect(() => {
+    if (initialYear === undefined) return;
+    let alive = true;
+    fetch(`${API_BASE}/compare/summary?session_id=${sessionId}&year=${initialYear}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then((summary: ComparisonSummary | null) => {
+        if (!alive || !summary) return;
+        setResults(prev => ({ ...prev, [initialYear]: summary }));
+        setActiveYear(initialYear);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [sessionId, initialYear]);
 
   const appendLog = useCallback((line: StreamLine) => {
     setLogs(prev => [...prev, line]);

@@ -11,8 +11,9 @@ type IndexName = 'ndvi' | 'bsi' | 'ndwi' | 'mndwi' | 'ndbi' | 'evi' | 'savi';
 
 interface IndicesPanelProps {
   sessionId: string;
-  sceneInfo: { id: string; datetime: string; cloudCover: number };
-  onComplete: () => void;
+  sceneInfo: { id: string; datetime: string };
+  /** Sin botón de continuar (modo guiado). */
+  onComplete?: () => void;
 }
 
 // ── Index metadata ─────────────────────────────────────────────────────────────
@@ -150,10 +151,12 @@ export default function IndicesPanel({ sessionId, sceneInfo, onComplete }: Indic
         </div>
       </div>
 
-      <button onClick={onComplete} className="btn btn-primary">
-        Clasificar la cobertura
-        <ArrowRight className="w-4 h-4" />
-      </button>
+      {onComplete && (
+        <button onClick={onComplete} className="btn btn-primary">
+          Clasificar la cobertura
+          <ArrowRight className="w-4 h-4" />
+        </button>
+      )}
     </div>
   );
 }

@@ -18,8 +18,9 @@ interface MapPanelProps {
   sessionId: string;
   zone: Zone | null;
   sceneInfo: { id: string; datetime: string } | null;
-  onReset: () => void;
-  onCompare: () => void;
+  /** Sin acciones (modo guiado): solo mapa y exportaciones. */
+  onReset?: () => void;
+  onCompare?: () => void;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -109,7 +110,7 @@ export default function MapPanel({ sessionId, zone, sceneInfo, onReset, onCompar
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] items-start">
+      <div className={`grid gap-6 items-start ${onCompare ? 'lg:grid-cols-[minmax(0,1fr)_360px]' : ''}`}>
         <section aria-labelledby="exports-title">
           <h2 id="exports-title" className="font-serif text-xl font-semibold mb-3">Exportar</h2>
           <ul className="sheet divide-y divide-rule">
@@ -132,6 +133,7 @@ export default function MapPanel({ sessionId, zone, sceneInfo, onReset, onCompar
           </ul>
         </section>
 
+        {onCompare && onReset && (
         <section className="sheet p-4 space-y-3" aria-labelledby="next-title">
           <h2 id="next-title" className="font-serif text-xl font-semibold">¿Qué cambió en esta zona?</h2>
           <p className="text-sm text-ink-2">
@@ -146,6 +148,7 @@ export default function MapPanel({ sessionId, zone, sceneInfo, onReset, onCompar
             Empezar un análisis nuevo
           </button>
         </section>
+        )}
       </div>
     </div>
   );
