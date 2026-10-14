@@ -27,6 +27,7 @@ class SessionData:
     class_scheme: str = "rules"                # «rules» o «worldcover» (core/classes.py)
     class_map: Optional[np.ndarray] = None
     comparisons: dict = field(default_factory=dict)  # {year: {"scene": {...}, "bands": {...}, "class_map": ...}}
+    heat: dict = field(default_factory=dict)         # {year: {"scene": {...}, "lst": °C, ...}} (core/thermal.py)
     created_at: datetime = field(default_factory=datetime.utcnow)
 
     def is_expired(self) -> bool:
