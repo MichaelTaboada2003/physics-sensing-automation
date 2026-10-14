@@ -22,6 +22,7 @@ import json
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
+from core.classes import scheme_json
 from core.compare import class_stats, pixel_area_m2
 from core.export import export_geotiff, render_classified_map
 from core.report import changes_geojson, render_before_after, render_trend_chart, report_html, stats_csv
@@ -330,9 +331,11 @@ def map_stats(
         "cloud_fraction": round(session.cloud_fraction, 4) if has_bands else None,
         "pixel_area_m2": pixel_area_m2(session) if has_bands else None,
         "classes": (
-            class_stats(session.class_map, pixel_area_m2(session))
+            class_stats(session.class_map, pixel_area_m2(session), session.class_scheme)
             if session.class_map is not None else None
         ),
+        "scheme": session.class_scheme,
+        "class_defs": scheme_json(session.class_scheme),
     }
 
 

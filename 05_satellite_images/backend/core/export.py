@@ -16,47 +16,34 @@ import numpy as np
 import rasterio
 from rasterio.io import MemoryFile
 
+from core.classes import NODATA_COLOR, scheme
+
 if TYPE_CHECKING:
     from session_store import SessionData
 
 # ---------------------------------------------------------------------------
-# Color mapping
-# Class labels: 0 = Vegetación, 1 = Agua, 2 = Minería/Suelo expuesto, -1 = No clasificado
-# Colormap index:  0 → verde, 1 → azul, 2 → ocre, 3 → tinta
+# Paletas por esquema de clases (core/classes.py). Índice de colormap = código
+# de clase; -1 (sin datos / nube) va al final.
 # ---------------------------------------------------------------------------
-# Paleta validada para daltonismo (ver frontend/src/index.css)
-CLASS_COLORS = ["#16a34a", "#2563eb", "#b45309", "#1b2430"]
 
-_CMAP = ListedColormap(CLASS_COLORS)
-
-_LEGEND_LABELS = [
-    ("#16a34a", "Vegetación"),
-    ("#2563eb", "Agua"),
-    ("#b45309", "Minería/Suelo expuesto"),
-    ("#1b2430", "No clasificado / nube"),
-]
+def class_palette(scheme_name: str | None) -> list[str]:
+    return [c.color for c in scheme(scheme_name)] + [NODATA_COLOR]
 
 
-def _class_map_to_index(class_map: np.ndarray) -> np.ndarray:
-    """
-    Convert class labels {-1, 0, 1, 2} to colormap indices {0, 1, 2, 3}.
+def class_legend(scheme_name: str | None) -> list[tuple[str, str]]:
+    return [(c.color, c.label) for c in scheme(scheme_name)] + [(NODATA_COLOR, "Sin datos / nube")]
 
-    Mapping:
-        0  → 0  (green  – Vegetación)
-        1  → 1  (blue   – Agua)
-        2  → 2  (saddlebrown – Minería)
-       -1  → 3  (black  – No clasificado)
-    """
-    index = np.where(class_map == -1, 3, class_map).astype(np.uint8)
-    return index
+
+def _class_map_to_index(class_map: np.ndarray, n_classes: int = 3) -> np.ndarray:
+    """Códigos de clase {-1, 0..n-1} → índices de colormap {0..n} (-1 → n)."""
+    return np.where(class_map == -1, n_classes, class_map).astype(np.uint8)
 
 
 def render_classified_map(session: "SessionData") -> bytes:
     """
     Render the session's class_map as a PNG image with a visible legend.
 
-    Uses a ListedColormap with CLASS_COLORS and adds a legend for all four
-    classes (Vegetación, Agua, Minería/Suelo expuesto, No clasificado).
+    Colors and legend come from the session's class scheme (core/classes.py).
 
     Returns:
         PNG image as bytes.
@@ -70,17 +57,15 @@ def render_classified_map(session: "SessionData") -> bytes:
             "Ejecute la predicción antes de renderizar el mapa."
         )
 
-    index_map = _class_map_to_index(session.class_map)
+    n = len(scheme(session.class_scheme))
+    index_map = _class_map_to_index(session.class_map, n)
 
     fig, ax = plt.subplots(figsize=(8, 6), dpi=100)
-    ax.imshow(index_map, cmap=_CMAP, vmin=0, vmax=3, interpolation="nearest")
+    ax.imshow(index_map, cmap=ListedColormap(class_palette(session.class_scheme)), vmin=0, vmax=n,
+              interpolation="nearest")
     ax.axis("off")
 
-    # Build legend patches
-    patches = [
-        mpatches.Patch(color=color, label=label)
-        for color, label in _LEGEND_LABELS
-    ]
+    patches = [mpatches.Patch(color=color, label=label) for color, label in class_legend(session.class_scheme)]
     ax.legend(
         handles=patches,
         loc="lower right",

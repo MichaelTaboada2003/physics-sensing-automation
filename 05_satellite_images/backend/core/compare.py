@@ -38,7 +38,8 @@ import matplotlib.patches as mpatches
 from matplotlib.colors import ListedColormap, to_rgba
 
 from core.classifier import build_features
-from core.export import CLASS_COLORS, _class_map_to_index
+from core.classes import primary, scheme, scheme_json
+from core.export import _class_map_to_index, class_palette
 from core.indices import compute_all_indices, compute_indices
 from core.search import best_scene
 from core.sentinel import (
@@ -62,19 +63,22 @@ _HEARTBEAT_S = 8.0       # el frontend corta tras 30 s sin datos
 _YEAR_WORKERS = 3        # años procesados en paralelo en la serie temporal
 _BAND_WORKERS = 6
 
-CLASS_NAMES = {0: "vegetation", 1: "water", 2: "mining", -1: "unclassified"}
+# Categorías del mapa de cambios (índice → color). Validada para daltonismo en
+# todos los pares. Las etiquetas de pérdida/ganancia nombran la clase principal
+# del esquema (vegetación o bosque); «Nueva zona urbana» solo existe con WorldCover.
+CHANGE_COLORS = ["#d9ded3", "#b42318", "#0d9488", "#f59e0b", "#7c3aed", "#1b2430", "#475569"]
+NO_DATA_CHANGE = 5
 
-# Categorías del mapa de cambios (índice → color, etiqueta)
-# Validada para daltonismo en todos los pares (rojo/teal/violeta/ámbar)
-CHANGE_LABELS = [
-    ("#d9ded3", "Sin cambio"),
-    ("#b42318", "Pérdida de vegetación"),
-    ("#0d9488", "Ganancia de vegetación"),
-    ("#f59e0b", "Nuevo suelo expuesto / minería"),
-    ("#7c3aed", "Otro cambio"),
-    ("#1b2430", "Sin datos / nube"),
-]
-_CHANGE_CMAP = ListedColormap([c for c, _ in CHANGE_LABELS])
+
+def change_labels(scheme_name: str | None = None) -> list[tuple[str, str]]:
+    main = primary(scheme_name).label.lower()
+    labels = ["Sin cambio", f"Pérdida de {main}", f"Ganancia de {main}",
+              "Nuevo suelo expuesto / minería", "Otro cambio", "Sin datos / nube", "Nueva zona urbana"]
+    return list(zip(CHANGE_COLORS, labels))
+
+
+# Compatibilidad: etiquetas del esquema de reglas
+CHANGE_LABELS = change_labels("rules")[:6]
 
 
 class YearError(Exception):
@@ -116,12 +120,13 @@ def pixel_area_m2(session: SessionData) -> float:
     return abs(t.a * t.e) if t is not None else 100.0
 
 
-def class_stats(class_map: np.ndarray, pixel_area: float) -> dict:
-    """Píxeles, hectáreas, % del total y % del área despejada (sin nubes) por clase."""
+def class_stats(class_map: np.ndarray, pixel_area: float, scheme_name: str | None = None) -> dict:
+    """Píxeles, hectáreas, % del total y % del área despejada (sin nubes) por clase del esquema."""
     total = class_map.size
     n_valid = int(np.count_nonzero(class_map != -1))
     out = {}
-    for label, name in CLASS_NAMES.items():
+    names = {c.code: c.key for c in scheme(scheme_name)} | {-1: "unclassified"}
+    for label, name in names.items():
         n = int(np.count_nonzero(class_map == label))
         out[name] = {
             "pixels": n,
@@ -134,12 +139,12 @@ def class_stats(class_map: np.ndarray, pixel_area: float) -> dict:
     return out
 
 
-def transition_matrix(past: np.ndarray, current: np.ndarray) -> list[list[int]]:
-    """Matriz 4×4 de transiciones (filas = pasado, columnas = actual).
+def transition_matrix(past: np.ndarray, current: np.ndarray, scheme_name: str | None = None) -> list[list[int]]:
+    """Matriz de transiciones (filas = pasado, columnas = actual).
 
-    Orden de clases: vegetación, agua, minería, no clasificado.
+    Orden: las clases del esquema por código y al final «sin datos» (-1).
     """
-    order = [0, 1, 2, -1]
+    order = [c.code for c in scheme(scheme_name)] + [-1]
     return [
         [int(np.count_nonzero((past == a) & (current == b))) for b in order]
         for a in order
@@ -151,10 +156,11 @@ def change_map(past: np.ndarray, current: np.ndarray) -> np.ndarray:
     out = np.zeros(past.shape, dtype=np.uint8)  # sin cambio
     changed = past != current
     out[changed] = 4  # otro cambio
+    out[changed & (current == 3)] = 6  # nueva zona urbana (solo esquema WorldCover)
     out[changed & (current == 2)] = 3
     out[changed & (current == 0)] = 2
     out[changed & (past == 0)] = 1
-    out[(past == -1) | (current == -1)] = 5
+    out[(past == -1) | (current == -1)] = NO_DATA_CHANGE
     return out
 
 
@@ -339,9 +345,10 @@ def build_summary(session: SessionData, year: int) -> dict:
             "local_cloud": round(session.cloud_fraction * 100, 2),
         },
         "pixel_area_m2": area,
-        "past": class_stats(past_map, area),
-        "current": class_stats(current_map, area),
-        "transitions": transition_matrix(past_map, current_map),
+        "past": class_stats(past_map, area, session.class_scheme),
+        "current": class_stats(current_map, area, session.class_scheme),
+        "transitions": transition_matrix(past_map, current_map, session.class_scheme),
+        "classes": scheme_json(session.class_scheme),
         "changed_percent": round(100.0 * np.count_nonzero(changed) / n_both, 2) if n_both else 0.0,
         "comparable_percent": round(100.0 * n_both / past_map.size, 2),
     }
@@ -353,7 +360,7 @@ def build_summary(session: SessionData, year: int) -> dict:
 
 def _series_point(session: SessionData, year: int, class_map: np.ndarray, ndvi: np.ndarray,
                   scene: dict, cloud_fraction: float) -> dict:
-    stats = class_stats(class_map, pixel_area_m2(session))
+    stats = class_stats(class_map, pixel_area_m2(session), session.class_scheme)
     return {
         "year": year,
         "scene": scene,
@@ -423,7 +430,7 @@ def build_series(session: SessionData) -> dict:
     # con al menos 50 % de la zona clasificada. Un año sin datos nunca entra como 0.
     usable = [p for p in points if p["valid_percent"] >= MIN_VALID_PERCENT]
     trends = {}
-    for name in ("vegetation", "water", "mining"):
+    for name in [c.key for c in scheme(session.class_scheme)]:
         t = trend_test([p["year"] for p in usable],
                        [p["stats"][name]["percent_clear"] or 0.0 for p in usable])
         if t:
@@ -441,6 +448,7 @@ def build_series(session: SessionData) -> dict:
         "total_hectares": round(total_ha, 2),
         "years_used_for_trend": [p["year"] for p in usable],
         "min_valid_percent": MIN_VALID_PERCENT,
+        "classes": scheme_json(session.class_scheme),
     }
 
 
@@ -527,7 +535,9 @@ def render_comparison(session: SessionData, year: int, fmt: str = "png", dpi: in
         compute_indices(session)
     d_ndvi = session.indices["ndvi"] - comp["ndvi"]
 
-    class_cmap = ListedColormap(CLASS_COLORS)
+    n = len(scheme(session.class_scheme))
+    class_cmap = ListedColormap(class_palette(session.class_scheme))
+    labels = change_labels(session.class_scheme)
     fig, axes = plt.subplots(2, 3, figsize=(15, 9.5), dpi=100)
 
     axes[0, 0].imshow(_rgb(comp["rgb"], p_lo, p_hi))
@@ -538,17 +548,18 @@ def render_comparison(session: SessionData, year: int, fmt: str = "png", dpi: in
     axes[0, 2].set_title(f"ΔNDVI ({cur_year} − {year})")
     fig.colorbar(im, ax=axes[0, 2], fraction=0.046, pad=0.04)
 
-    axes[1, 0].imshow(_class_map_to_index(comp["class_map"]), cmap=class_cmap, vmin=0, vmax=3,
+    axes[1, 0].imshow(_class_map_to_index(comp["class_map"], n), cmap=class_cmap, vmin=0, vmax=n,
                       interpolation="nearest")
     axes[1, 0].set_title(f"Clasificación {year}")
-    axes[1, 1].imshow(_class_map_to_index(session.class_map), cmap=class_cmap, vmin=0, vmax=3,
+    axes[1, 1].imshow(_class_map_to_index(session.class_map, n), cmap=class_cmap, vmin=0, vmax=n,
                       interpolation="nearest")
     axes[1, 1].set_title(f"Clasificación {cur_year}")
-    axes[1, 2].imshow(change_map(comp["class_map"], session.class_map), cmap=_CHANGE_CMAP,
-                      vmin=0, vmax=len(CHANGE_LABELS) - 1, interpolation="nearest")
+    axes[1, 2].imshow(change_map(comp["class_map"], session.class_map), cmap=ListedColormap(CHANGE_COLORS),
+                      vmin=0, vmax=len(CHANGE_COLORS) - 1, interpolation="nearest")
     axes[1, 2].set_title("Mapa de cambios")
     axes[1, 2].legend(
-        handles=[mpatches.Patch(color=c, label=l) for c, l in CHANGE_LABELS],
+        handles=[mpatches.Patch(color=c, label=l) for c, l in labels
+                 if session.class_scheme == "worldcover" or l != "Nueva zona urbana"],
         loc="lower right", fontsize=7, framealpha=0.85,
     )
 
@@ -590,7 +601,9 @@ def render_layer(session: SessionData, kind: str, year: int | None = None) -> by
         rgba[..., 3] = np.where(np.isfinite(bands["B04"]), 255, 0)
     elif kind == "class":
         cmap = src["class_map"] if src else session.class_map
-        rgba[:] = _palette_rgba(CLASS_COLORS)[_class_map_to_index(cmap)]
+        rgba[:] = _palette_rgba(class_palette(session.class_scheme))[
+            _class_map_to_index(cmap, len(scheme(session.class_scheme)))
+        ]
         rgba[cmap == -1, 3] = 0
     elif kind == "ndvi":
         if src is None and not session.indices:
@@ -603,7 +616,7 @@ def render_layer(session: SessionData, kind: str, year: int | None = None) -> by
         if src is None:
             raise ValueError("La capa de cambios requiere un año comparado.")
         codes = change_map(src["class_map"], session.class_map)
-        rgba[:] = _palette_rgba([c for c, _ in CHANGE_LABELS])[codes]
+        rgba[:] = _palette_rgba(CHANGE_COLORS)[codes]
         rgba[(codes == 0) | (codes == 5), 3] = 0
     else:
         raise ValueError(f"Capa '{kind}' no válida. Opciones: {LAYER_KINDS}.")

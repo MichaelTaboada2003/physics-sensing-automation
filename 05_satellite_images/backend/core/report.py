@@ -30,7 +30,7 @@ from core.bands import generate_true_color
 from matplotlib.colors import ListedColormap
 
 from core.compare import (
-    CHANGE_LABELS,
+    change_labels,
     _rgb,
     _rgb_stretch,
     build_series,
@@ -40,13 +40,11 @@ from core.compare import (
     render_comparison,
     scene_year,
 )
-from core.export import CLASS_COLORS, _class_map_to_index, render_classified_map
+from core.classes import primary, scheme
+from core.export import _class_map_to_index, class_palette, render_classified_map
 from session_store import SessionData
 
-_CLASS_ROWS = [("vegetation", "Vegetación"), ("water", "Agua"), ("mining", "Minería / suelo expuesto"),
-               ("unclassified", "Sin datos / nube")]
 _INK_2 = "#3d4856"
-_SERIES_COLORS = {"vegetation": "#16a34a", "water": "#2563eb", "mining": "#b45309"}
 
 
 # ---------------------------------------------------------------------------
@@ -60,8 +58,9 @@ def stats_csv(session: SessionData) -> str:
     w = csv.writer(buf)
     w.writerow(["year", "scene_id", "date", "clear_percent", "ndvi_mean",
                 "class", "hectares", "percent_total", "percent_clear"])
+    keys = [c.key for c in scheme(session.class_scheme)] + ["unclassified"]
     for p in series["points"]:
-        for key, _label in _CLASS_ROWS:
+        for key in keys:
             st = p["stats"][key]
             w.writerow([p["year"], p["scene"]["id"], p["scene"]["datetime"][:10], p["clear_percent"],
                         p["ndvi_mean"], key, st["hectares"], st["percent"],
@@ -80,6 +79,7 @@ def changes_geojson(session: SessionData, year: int, min_area_ha: float = 0.5) -
     (``rasterio.features.sieve``) antes de vectorizar.
     """
     comp = session.comparisons[year]
+    labels = change_labels(session.class_scheme)
     codes = change_map(comp["class_map"], session.class_map)
     codes[codes == 5] = 0  # sin datos → sin cambio
     area = pixel_area_m2(session)
@@ -96,8 +96,8 @@ def changes_geojson(session: SessionData, year: int, min_area_ha: float = 0.5) -
             "geometry": geom_ll,
             "properties": {
                 "change_code": value,
-                "change": CHANGE_LABELS[value][1],
-                "color": CHANGE_LABELS[value][0],
+                "change": labels[value][1],
+                "color": labels[value][0],
                 "area_ha": round(n_px * area / 10_000, 3),
                 "from_year": year,
                 "to_year": scene_year(session),
@@ -133,9 +133,10 @@ def _series_chart(series: dict) -> bytes:
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(9, 6), dpi=110, sharex=True,
                                    gridspec_kw={"height_ratios": [2, 1]})
     ends = []
-    for key, label in _CLASS_ROWS[:3]:
+    for cls in series["classes"]:
+        key, label = cls["key"], cls["label"]
         ys = [np.nan if p["stats"][key]["percent_clear"] is None else p["stats"][key]["percent_clear"] for p in pts]
-        ax1.plot(years, ys, marker="o", markersize=5, linewidth=2, color=_SERIES_COLORS[key], label=label)
+        ax1.plot(years, ys, marker="o", markersize=5, linewidth=2, color=cls["color"], label=label)
         ends.append([ys[-1], label.split(" ")[0]])
     # Etiquetas directas al final de cada línea, separadas al menos 5 pp
     ends.sort()
@@ -214,17 +215,19 @@ Kappa: <b>{_fmt(m.get('kappa'), 3)}</b> · {m['n_train']} muestras de entrenamie
 
     if session.comparisons:
         series = build_series(session)
-        trows = "".join(_trend_row(label, series["trends"].get(k)) for k, label in _CLASS_ROWS[:3])
+        cls = [(c.key, c.label) for c in scheme(session.class_scheme)]
+        trows = "".join(_trend_row(label, series["trends"].get(k)) for k, label in cls)
+        heads = "".join(f"<th>{html.escape(label)}</th>" for _, label in cls)
         prow = "".join(
             f"<tr><td>{p['year']}</td><td>{p['scene']['datetime'][:10]}</td><td>{p['clear_percent']:.0f} %</td>"
-            + "".join(f"<td>{_fmt(p['stats'][k]['percent_clear'], 1, ' %')}</td>" for k, _ in _CLASS_ROWS[:3])
+            + "".join(f"<td>{_fmt(p['stats'][k]['percent_clear'], 1, ' %')}</td>" for k, _ in cls)
             + f"<td>{_fmt(p['ndvi_mean'], 3)}</td></tr>"
             for p in series["points"]
         )
         parts.append(f"""
 <h2>Evolución temporal</h2>
 {_img(_series_chart(series), 'Serie temporal')}
-<table><tr><th>Año</th><th>Fecha escena</th><th>Despejado</th><th>Vegetación</th><th>Agua</th><th>Minería</th><th>NDVI medio</th></tr>{prow}</table>
+<table><tr><th>Año</th><th>Fecha escena</th><th>Despejado</th>{heads}<th>NDVI medio</th></tr>{prow}</table>
 <h3>Tendencias (Theil-Sen + Mann-Kendall)</h3>
 <table><tr><th>Clase</th><th>Pendiente</th><th>Equivalente (IC 95 %)</th><th>τ de Kendall</th><th>p-valor</th><th>¿Significativa?</th></tr>{trows}</table>
 <p class="note">Pendiente de Theil-Sen (mediana de pendientes entre pares de años) y prueba de Mann-Kendall
@@ -236,7 +239,7 @@ Kappa: <b>{_fmt(m.get('kappa'), 3)}</b> · {m['n_train']} muestras de entrenamie
             rows = "".join(
                 f"<tr><td>{label}</td><td>{s['past'][k]['hectares']:,.1f}</td><td>{s['current'][k]['hectares']:,.1f}</td>"
                 f"<td>{s['current'][k]['hectares'] - s['past'][k]['hectares']:+,.1f}</td></tr>"
-                for k, label in _CLASS_ROWS
+                for k, label in cls + [("unclassified", "Sin datos / nube")]
             )
             parts.append(f"""
 <section class="page">
@@ -313,8 +316,10 @@ def render_before_after(session: SessionData, year: int, kind: str = "rgb", titl
     cur_year = scene_year(session)
     p_lo, p_hi = _rgb_stretch(session)
     if kind == "class":
-        panels = [_class_map_to_index(comp["class_map"]), _class_map_to_index(session.class_map)]
-        imshow_kw = {"cmap": ListedColormap(CLASS_COLORS), "vmin": 0, "vmax": 3, "interpolation": "nearest"}
+        n = len(scheme(session.class_scheme))
+        panels = [_class_map_to_index(comp["class_map"], n), _class_map_to_index(session.class_map, n)]
+        imshow_kw = {"cmap": ListedColormap(class_palette(session.class_scheme)), "vmin": 0, "vmax": n,
+                     "interpolation": "nearest"}
     else:
         panels = [_rgb(comp["rgb"], p_lo, p_hi), _rgb(session.bands, p_lo, p_hi)]
         imshow_kw = {}
@@ -341,27 +346,28 @@ def render_before_after(session: SessionData, year: int, kind: str = "rgb", titl
 
 
 def render_trend_chart(session: SessionData, title: str = "") -> bytes:
-    """Serie de vegetación con la recta de Theil-Sen, su veredicto y el crédito."""
+    """Serie de la clase principal (vegetación o bosque) con Theil-Sen, veredicto y crédito."""
+    main = primary(session.class_scheme)
     series = build_series(session)
     pts = series["points"]
     years = [p["year"] for p in pts]
     used_years = set(series["years_used_for_trend"])
     # Años sin suficientes píxeles clasificados quedan como hueco, nunca como 0
     veg_ha = [
-        (p["stats"]["vegetation"]["percent_clear"] / 100 * series["total_hectares"])
-        if p["year"] in used_years and p["stats"]["vegetation"]["percent_clear"] is not None else np.nan
+        (p["stats"][main.key]["percent_clear"] / 100 * series["total_hectares"])
+        if p["year"] in used_years and p["stats"][main.key]["percent_clear"] is not None else np.nan
         for p in pts
     ]
-    trend = series["trends"].get("vegetation")
+    trend = series["trends"].get(main.key)
 
     fig, ax = plt.subplots(figsize=(10, 5.4), dpi=130, facecolor=_PAPER)
     ax.set_facecolor(_PAPER)
     ax.plot(years, veg_ha, marker="o", markersize=7, linewidth=2.4, color="#16a34a",
-            markeredgecolor=_PAPER, markeredgewidth=1.5, label="Vegetación (estimada)")
+            markeredgecolor=_PAPER, markeredgewidth=1.5, label=f"{main.label} (estimada)")
     if trend:
         used = [p for p in pts if p["year"] in series["years_used_for_trend"]]
         x = np.array([p["year"] for p in used], dtype=float)
-        y = np.array([p["stats"]["vegetation"]["percent_clear"] / 100 * series["total_hectares"] for p in used])
+        y = np.array([p["stats"][main.key]["percent_clear"] / 100 * series["total_hectares"] for p in used])
         slope = trend["ha_per_year"]
         color = "#b42318" if trend["significant"] else _MUTED
         share = 100 * slope / series["total_hectares"]
@@ -383,7 +389,7 @@ def render_trend_chart(session: SessionData, title: str = "") -> bytes:
     finite = [v for v in veg_ha if np.isfinite(v)]
     ax.set_ylim(0, max(finite) * 1.08 if finite else 1)
     ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: _es(v, 0)))
-    ax.set_ylabel("Hectáreas de vegetación", color=_INK)
+    ax.set_ylabel(f"Hectáreas de {main.label.lower()}", color=_INK)
     ax.set_xticks(years)
     ax.tick_params(colors=_INK)
     ax.grid(axis="y", color="#e1e5dc")

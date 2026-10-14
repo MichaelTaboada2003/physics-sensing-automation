@@ -382,3 +382,32 @@ def test_train_worldcover_uses_scheme_with_urban_and_forest():
     assert done["method"] == "worldcover" and session.class_scheme == "worldcover"
     assert set(done["metrics"]["classes"]) == {"Bosque", "Agua", "Urbano / construido", "Pastos y cultivos"}
     assert [c["key"] for c in done["classes"]] == ["forest", "water", "mining", "urban", "grass"]
+
+
+def test_worldcover_scheme_flows_through_stats_series_and_change_map():
+    sid, session = _make_session()
+    session.class_scheme = "worldcover"
+    cm = np.zeros(SHAPE, dtype=np.int16)
+    cm[:, 12:] = 3                                  # urbano
+    session.class_map = cm
+    past = np.zeros(SHAPE, dtype=np.int16)          # todo bosque en el pasado
+    session.comparisons[2020] = {
+        "scene": {"id": "P", "datetime": "2020-07-01", "cloud_cover": 1.0, "local_cloud": 0.0},
+        "rgb": {b: np.full(SHAPE, 0.1, dtype=np.float32) for b in sentinel.RGB_BANDS},
+        "ndvi": np.full(SHAPE, 0.7, dtype=np.float32), "class_map": past, "cloud_fraction": 0.0,
+    }
+    st = client.get("/map/stats", params={"session_id": sid}).json()
+    assert st["scheme"] == "worldcover" and set(st["classes"]) == {"forest", "water", "mining", "urban", "grass", "unclassified"}
+    summary = client.get("/compare/summary", params={"session_id": sid, "year": 2020}).json()
+    assert summary["current"]["urban"]["percent"] == 50.0 and len(summary["transitions"]) == 6
+    series = client.get("/timeseries/summary", params={"session_id": sid}).json()
+    assert [c["key"] for c in series["classes"]][0] == "forest" and "urban" in series["trends"]
+    # Bosque → urbano cuenta como pérdida de bosque (prioridad sobre «nueva zona urbana»)
+    assert compare.change_map(past, cm)[0, -1] == 1
+    assert compare.change_labels("worldcover")[1][1] == "Pérdida de bosque"
+    assert compare.change_map(np.array([[4]]), np.array([[3]]))[0, 0] == 6
+    for kind in ("class", "change"):
+        params = {"session_id": sid, "kind": kind} | ({"year": 2020} if kind == "change" else {})
+        assert client.get("/layer", params=params).status_code == 200
+    assert client.get("/export/beforeafter.png", params={"session_id": sid, "year": 2020, "kind": "class"}).status_code == 200
+    assert "urban" in client.get("/export/stats.csv", params={"session_id": sid}).text
