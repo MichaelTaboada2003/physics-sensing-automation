@@ -5,6 +5,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
+    // Permite compartir el servidor de desarrollo con un túnel rápido de Cloudflare
+    allowedHosts: ['.trycloudflare.com'],
     proxy: {
       '/search': 'http://localhost:8004',
       '/download': 'http://localhost:8004',
