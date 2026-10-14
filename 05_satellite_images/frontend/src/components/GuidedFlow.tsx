@@ -13,6 +13,7 @@ import { RULES_DEFS, chartColor, dePhrase, phrase } from '../lib/classes';
 import AoiMap from './map/AoiMap';
 import SwipeMap from './map/SwipeMap';
 import MapLegend from './MapLegend';
+import GuidedHeat from './heat/GuidedHeat';
 import SpecimenLabel from './SpecimenLabel';
 import type { DeterminationSlip } from './SpecimenLabel';
 import type { GuidedRun, GuidedStage, TaskId } from '../lib/guided';
@@ -523,6 +524,9 @@ function GuidedResults({
           <p className="text-sm text-muted">Las imágenes incluyen el crédito «Contiene datos modificados de Copernicus Sentinel-2».</p>
         </section>
       </div>
+
+      {/* Calor: temperatura de superficie con Landsat */}
+      {sessionId && <GuidedHeat sessionId={sessionId} year={base.year} bounds={bounds} />}
 
       {/* Qué mide y qué no */}
       <section className="sheet p-4 max-w-[80ch]" aria-labelledby="limits-title">
