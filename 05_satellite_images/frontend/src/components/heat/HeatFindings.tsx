@@ -41,7 +41,7 @@ export function DeforestationHeadline({ heat }: { heat: HeatSummary }) {
       </p>
       <p className="text-ink-2 max-w-[70ch]">
         Intervalo del 95 %: <span className="figure">{signedC(d.did_low!)}</span> a <span className="figure">{signedC(d.did_high!)}</span>.
-        Hoy esas zonas están en promedio a <span className="figure text-ink font-bold">{fmtC(d.lost_now_mean!)}</span>, frente a{' '}
+        En la escena reciente esas zonas están en promedio a <span className="figure text-ink font-bold">{fmtC(d.lost_now_mean!)}</span>, frente a{' '}
         <span className="figure text-ink font-bold">{fmtC(d.kept_now_mean!)}</span> {dePhrase(main)} conservado
         (<span className="figure">{signedC(d.now_diff!)}</span>).
       </p>

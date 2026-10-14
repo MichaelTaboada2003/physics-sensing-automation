@@ -7,6 +7,7 @@ import { heatYears } from '../lib/heat';
 import TaskProgress from './TaskProgress';
 import type { TaskStatus } from './TaskProgress';
 import HeatMap from './heat/HeatMap';
+import HeatTimeline from './heat/HeatTimeline';
 import { DeforestationHeadline, HeatByClassTable, HeatNotes } from './heat/HeatFindings';
 
 interface HeatPanelProps {
@@ -76,6 +77,10 @@ export default function HeatPanel({ sessionId, sceneYear }: HeatPanelProps) {
 
   return (
     <div className="space-y-6">
+      <HeatTimeline key={sessionId} sessionId={sessionId} configurable />
+      <details className="sheet p-4">
+        <summary className="font-semibold cursor-pointer">Mapas térmicos y contraste espacial entre dos fechas</summary>
+        <div className="space-y-6 mt-4">
       <section className="sheet p-4 space-y-3" aria-labelledby="heat-year-title">
         <div>
           <h2 id="heat-year-title" className="font-serif text-xl font-semibold">
@@ -135,6 +140,8 @@ export default function HeatPanel({ sessionId, sceneYear }: HeatPanelProps) {
           <HeatNotes heat={heat} />
         </div>
       )}
+        </div>
+      </details>
     </div>
   );
 }

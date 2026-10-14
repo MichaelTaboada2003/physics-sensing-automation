@@ -12,6 +12,7 @@ export interface StreamLine {
   comparison?: ComparisonSummary;
   series?: TimeSeries;
   heat?: HeatSummary;
+  heat_series?: HeatTimeSeries;
   method?: ClassMethod;
   classes?: ClassDef[];
 }
@@ -235,4 +236,33 @@ export interface HeatSummary {
   past: { year: number; scene: HeatScene; clear_percent: number; overall: HeatStats | null } | null;
   delta_range: number | null;
   deforestation: DeforestationHeat | null;
+}
+
+export interface HeatSeriesPoint {
+  year: number;
+  heat_scene: HeatScene | null;
+  cover_scene: { id: string; datetime: string } | null;
+  available_percent: number;
+  reason: string | null;
+  temperature_mean: number | null;
+  temperature_change: number | null;
+  cover_hectares: number | null;
+  loss_hectares: number | null;
+}
+
+export interface HeatTimeSeries {
+  points: HeatSeriesPoint[];
+  years_back: number;
+  reference_year: number | null;
+  current_year: number;
+  enough: boolean;
+  common_percent: number;
+  common_hectares: number;
+  total_hectares: number;
+  min_common_percent: number;
+  coverage_label: string;
+  primary_key: string;
+  primary_learned: boolean;
+  classifier_id: string | null;
+  method: 'single_scene_unadjusted_common_support';
 }

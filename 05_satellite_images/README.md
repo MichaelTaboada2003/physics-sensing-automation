@@ -177,3 +177,30 @@ scikit-learn
 matplotlib
 python-multipart
 ```
+
+### Temperatura observada y pérdida de cobertura (2026-10-13)
+
+En **Calor**, tanto en guiado como experto, se puede calcular una serie con una
+escena Landsat por temporada/año y comparar sus temperaturas **sin detrending**
+con la cobertura Sentinel-2. El modo experto permite elegir 3, 5 o 10 años previos.
+
+- Dos gráficos alineados: temperatura / cobertura, o Δ temperatura / pérdida
+  respecto al primer año comparable. No se ajusta por bosque conservado ni se
+  genera una conclusión causal o un coeficiente de correlación.
+- Se usa la **misma intersección de píxeles válidos** en todos los años elegibles,
+  sin extrapolar al resto del AOI. Se requieren al menos dos observaciones y
+  50 % de área común. Años faltantes y escenas duplicadas son huecos, no ceros.
+- Fechas Landsat/Sentinel, área común y motivos de exclusión disponibles en tabla
+  y CSV. La búsqueda estacional puede cruzar el año o recurrir a otro mes.
+- Es temperatura de **superficie de escenas individuales**, no temperatura del
+  aire, promedio anual o tendencia climática. “Cobertura arbórea” incluye
+  plantaciones; su pérdida clasificada no confirma deforestación de bosque natural.
+- Los mapas y el contraste espacial previo quedan en un detalle desplegable.
+
+API: `POST /heat/timeseries {session_id, years_back}`, recuperación sin nuevas
+lecturas en `GET /heat/timeseries/summary`, CSV en `GET /heat/timeseries.csv`
+(los GET reciben `session_id` y `years_back`). Reentrenar invalida mapas y
+comparaciones derivados; las temperaturas brutas se conservan.
+
+Pruebas: desde `backend`, `.venv/bin/python -m pytest -q`; desde `frontend`,
+`npm test`, `npm run lint` y `npm run build`.

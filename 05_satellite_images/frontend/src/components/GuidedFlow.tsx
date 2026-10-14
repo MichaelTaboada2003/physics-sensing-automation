@@ -34,7 +34,7 @@ const TASKS: { id: TaskId; label: string; detail: string }[] = [
   { id: 'train', label: 'Aprender a reconocer la cobertura', detail: 'Bosque, pastos y cultivos, agua, suelo expuesto y zonas urbanas, con ejemplos del mapa ESA WorldCover.' },
   { id: 'map', label: 'Clasificar la zona', detail: 'Cada píxel de 10 × 10 m recibe una clase.' },
   { id: 'series', label: 'Revisar los 10 años anteriores', detail: 'La misma temporada de cada año, clasificada con el mismo modelo.' },
-  { id: 'heat', label: 'Medir la temperatura', detail: 'Landsat 8/9 en el año base y hoy, para ver si lo deforestado se calentó.' },
+  { id: 'heat', label: 'Medir la temperatura', detail: 'Landsat 8/9 en dos fechas de referencia; la pestaña Calor permite comparar la serie observada con la cobertura.' },
 ];
 
 const LAST_YEAR = new Date().getFullYear() - 1;

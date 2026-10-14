@@ -87,7 +87,7 @@ const STEPS: { id: AppStep; label: string; title: string; purpose: string }[] = 
   },
   {
     id: 7, label: 'Calor', title: 'Temperatura de la superficie',
-    purpose: 'Cuánto más calientes están las zonas urbanas y las deforestadas, con Landsat 8/9.',
+    purpose: 'Observa la temperatura de superficie y la pérdida de cobertura a lo largo del tiempo, sin atribución automática.',
   },
 ];
 

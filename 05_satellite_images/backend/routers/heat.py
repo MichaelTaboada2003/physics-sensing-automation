@@ -22,10 +22,11 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.compare import MAX_YEARS_BACK
 from core.thermal import FIRST_YEAR, HEAT_LAYER_KINDS, heat_stream, heat_summary, render_heat_layer
+from core.heat_series import build_heat_series, heat_series_csv, heat_series_stream
 from routers.compare import _get_session_or_404, _require_class_map
 
 router = APIRouter()
@@ -34,6 +35,34 @@ router = APIRouter()
 class HeatRequest(BaseModel):
     session_id: str
     year: Optional[int] = None
+
+
+class HeatSeriesRequest(BaseModel):
+    session_id: str
+    years_back: int = Field(10, ge=1, le=MAX_YEARS_BACK)
+
+
+@router.post("/heat/timeseries")
+def timeseries(request: HeatSeriesRequest) -> StreamingResponse:
+    session = _get_session_or_404(request.session_id)
+    _require_class_map(session)
+    return StreamingResponse(heat_series_stream(request.session_id, request.years_back), media_type="application/x-ndjson")
+
+
+@router.get("/heat/timeseries/summary")
+def timeseries_summary(session_id: str, years_back: int = Query(10, ge=1, le=MAX_YEARS_BACK)) -> dict:
+    session = _get_session_or_404(session_id)
+    _require_class_map(session)
+    return build_heat_series(session, years_back)
+
+
+@router.get("/heat/timeseries.csv")
+def timeseries_csv(session_id: str, years_back: int = Query(10, ge=1, le=MAX_YEARS_BACK)) -> Response:
+    session = _get_session_or_404(session_id)
+    _require_class_map(session)
+    series = build_heat_series(session, years_back)
+    return Response(content="\ufeff" + heat_series_csv(series), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="temperatura_cobertura.csv"'})
 
 
 def _check_year(session, year: Optional[int]) -> None:

@@ -482,6 +482,9 @@ def train_stream(
     session.classifier_id = classifier_id
     session.classifier_metrics = metrics
     session.class_scheme = method
+    # Los derivados de otro modelo (o esquema) nunca son comparables.
+    session.class_map = None
+    session.comparisons.clear()
 
     # ------------------------------------------------------------------
     # 10. Línea final (Req 6.3, 10.4)
@@ -663,7 +666,12 @@ def predict_stream(session_id: str) -> Generator[str, None, None]:
     # 7. Almacenar class_map en la sesión
     # ------------------------------------------------------------------
     map_id = str(uuid.uuid4())
+    if session.classifier is not clf:
+        yield _ndjson({"stage": "error", "progress": 1.0, "message": "El modelo cambió durante la predicción.",
+                       "error": "Vuelva a clasificar con el modelo activo."})
+        return
     session.class_map = class_map
+    session.comparisons.clear()
 
     # ------------------------------------------------------------------
     # 8. Línea final (Req 10.4)

@@ -185,6 +185,9 @@ def process_year(
     """
     scene_dt = datetime.fromisoformat(session.scene_datetime)
 
+    model, current_map = session.classifier, session.class_map
+    model_id = session.classifier_id
+
     # 1. Búsqueda estacional (nubosidad local), fallback al año completo
     seasonal = seasonal_time_range(scene_dt, year)
     scene = None
@@ -241,9 +244,10 @@ def process_year(
     X_flat, valid = build_features(bands, indices)
     class_map = np.full(ref_shape, -1, dtype=np.int16)
     if X_flat.shape[0] > 0:
-        class_map[valid] = session.classifier.predict(X_flat).astype(np.int16)
+        class_map[valid] = model.predict(X_flat).astype(np.int16)
 
     entry = {
+        "classifier_id": model_id,
         "scene": {
             "id": scene["id"],
             "datetime": scene["datetime"],
@@ -255,6 +259,8 @@ def process_year(
         "class_map": class_map,
         "cloud_fraction": float(mask.mean()),
     }
+    if session.classifier is not model or session.class_map is not current_map:
+        raise YearError("El modelo o el mapa cambió durante la comparación; vuelva a calcularla.")
     session.comparisons[year] = entry
     return entry
 

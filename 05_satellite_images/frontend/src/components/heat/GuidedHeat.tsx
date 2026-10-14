@@ -5,6 +5,7 @@ import type { HeatSummary } from '../../types';
 import { useProgressStream } from '../../hooks/useProgressStream';
 import { HEAT_FIRST_YEAR } from '../../lib/heat';
 import HeatMap from './HeatMap';
+import HeatTimeline from './HeatTimeline';
 import { DeforestationHeadline, HeatByClassTable, HeatNotes } from './HeatFindings';
 
 interface GuidedHeatProps {
@@ -52,14 +53,18 @@ export default function GuidedHeat({ sessionId, year: baseYear, bounds }: Guided
   };
 
   return (
-    <section className="space-y-4" aria-labelledby="guided-heat-title">
+    <div className="space-y-6">
+      <HeatTimeline key={sessionId} sessionId={sessionId} />
+      <details className="sheet p-4">
+        <summary className="font-semibold cursor-pointer">Mapas térmicos y contraste espacial entre dos fechas</summary>
+    <section className="space-y-4 mt-4" aria-labelledby="guided-heat-title">
       <div className="max-w-[72ch]">
         <h2 id="guided-heat-title" className="font-serif text-xl sm:text-2xl font-semibold flex items-center gap-2">
           <Thermometer className="w-5 h-5 text-ink-2" aria-hidden /> ¿Se calentó la zona?
         </h2>
         {!heat && (
           <p className="mt-1 text-ink-2">
-            Con el satélite Landsat medimos la temperatura de la superficie en <span className="figure">{year}</span> y hoy, y comparamos
+            Con el satélite Landsat medimos la temperatura de la superficie en <span className="figure">{year}</span> y en la escena de referencia, y comparamos
             las zonas que perdieron bosque con las que lo conservaron. Tarda alrededor de medio minuto.
           </p>
         )}
@@ -94,5 +99,7 @@ export default function GuidedHeat({ sessionId, year: baseYear, bounds }: Guided
         </div>
       )}
     </section>
+      </details>
+    </div>
   );
 }
