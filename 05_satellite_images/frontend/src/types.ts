@@ -11,6 +11,7 @@ export interface StreamLine {
   metrics?: ClassifierMetrics;
   comparison?: ComparisonSummary;
   series?: TimeSeries;
+  heat?: HeatSummary;
   method?: ClassMethod;
   classes?: ClassDef[];
 }
@@ -171,3 +172,67 @@ export interface TimeSeries {
 }
 
 export type LayerKind = 'rgb' | 'class' | 'ndvi' | 'change';
+
+// ── Temperatura de superficie (Landsat 8/9) ─────────────────────────────────────
+
+export interface HeatStats {
+  mean: number;
+  median: number;
+  p10: number;
+  p90: number;
+  pixels: number;
+}
+
+export interface HeatScene {
+  id: string;
+  datetime: string;
+  platform: string | null;
+  cloud_cover: number | null;
+  local_clear: number;
+}
+
+export interface HeatByClass extends HeatStats {
+  key: string;
+  label: string;
+  color: string;
+  hectares: number;
+}
+
+/** Calor en lo deforestado vs. lo conservado (core/thermal.py · deforestation_heat). */
+export interface DeforestationHeat {
+  year: number;
+  enough: boolean;
+  lost_pixels: number;
+  kept_pixels: number;
+  lost_hectares: number;
+  kept_hectares: number;
+  lost_now_mean?: number;
+  kept_now_mean?: number;
+  lost_delta_mean?: number;
+  kept_delta_mean?: number;
+  now_diff?: number;
+  now_diff_low?: number;
+  now_diff_high?: number;
+  did?: number;
+  did_low?: number;
+  did_high?: number;
+  significant?: boolean;
+  blocks?: number;
+  block_m?: number;
+}
+
+export interface HeatSummary {
+  year: number;
+  scene: HeatScene;
+  clear_percent: number;
+  overall: HeatStats | null;
+  by_class: HeatByClass[];
+  range: [number, number];
+  ramp: string[];
+  delta_ramp: string[];
+  primary: { key: string; label: string };
+  years: number[];
+  past: { year: number; scene: HeatScene; clear_percent: number; overall: HeatStats | null } | null;
+  delta_range: number | null;
+  deforestation: DeforestationHeat | null;
+}

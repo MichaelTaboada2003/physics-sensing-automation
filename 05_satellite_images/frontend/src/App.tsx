@@ -7,6 +7,7 @@ import IndicesPanel from './components/IndicesPanel';
 import ClassifierPanel from './components/ClassifierPanel';
 import MapPanel from './components/MapPanel';
 import ComparePanel from './components/ComparePanel';
+import HeatPanel from './components/HeatPanel';
 import SpecimenLabel from './components/SpecimenLabel';
 import { useMapStats } from './hooks/useMapStats';
 import GuidedFlow from './components/GuidedFlow';
@@ -16,7 +17,7 @@ import { PRESETS } from './lib/geo';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type AppStep = 1 | 2 | 3 | 4 | 5 | 6;
+type AppStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 type Mode = 'guided' | 'expert';
 
 const MODE_KEY = 'satelite05.mode';
@@ -84,6 +85,10 @@ const STEPS: { id: AppStep; label: string; title: string; purpose: string }[] = 
     id: 6, label: 'Comparar', title: 'Comparativa temporal',
     purpose: 'La misma zona hasta 10 años atrás, con tendencias y su significancia.',
   },
+  {
+    id: 7, label: 'Calor', title: 'Temperatura de la superficie',
+    purpose: 'Cuánto más calientes están las zonas urbanas y las deforestadas, con Landsat 8/9.',
+  },
 ];
 
 const GUIDED_STAGES: { id: GuidedStage; label: string; title: string; purpose: string }[] = [
@@ -126,8 +131,8 @@ function App() {
 
   const isStepAccessible = (stepId: AppStep): boolean => {
     if (stepId === 1) return true;
-    // La comparativa necesita el mapa clasificado actual
-    if (stepId === 6) return state.mapReady;
+    // La comparativa y el calor necesitan el mapa clasificado actual
+    if (stepId >= 6) return state.mapReady;
     return state.sessionId !== null;
   };
 
@@ -357,6 +362,10 @@ function App() {
               zone={state.zone}
               sceneInfo={state.sceneInfo}
             />
+          )}
+
+          {!guided && state.step === 7 && state.sessionId && state.sceneInfo && (
+            <HeatPanel sessionId={state.sessionId} sceneYear={new Date(state.sceneInfo.datetime).getUTCFullYear()} />
           )}
           </div>
         </div>
