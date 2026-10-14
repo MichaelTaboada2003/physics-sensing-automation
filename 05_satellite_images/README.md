@@ -101,6 +101,13 @@ B04 se lee en su ventana nativa (10 m) y define la grilla; las demás bandas (B0
 | SAVI | `1.5(B08−B04)/(B08+B04+0.5)` | Vegetación con suelo visible |
 
 ### Paso 4 — Clasificador Random Forest
+
+Dos fuentes de ejemplos, elegibles en el modo experto:
+- **Reglas del curso** (por defecto): pseudo-etiquetado por umbrales, 3 clases (vegetación, agua, suelo expuesto / minería).
+- **WorldCover (ESA)**: etiquetas del mapa ESA WorldCover 2021 (10 m) leído sobre la grilla de la escena; 5 clases: bosque, agua, suelo expuesto / minería, **urbano / construido** y **pastos y cultivos**. Recomendado para ciudades (en el centro de Medellín el agua falsa pasa de 24,5 % a 0,6 %) y para deforestación (bosque separado de potreros). El modo guiado usa este método.
+
+En ambos, una clase con menos de 200 ejemplos (o del 2 % en zonas pequeñas) se omite en lugar de hacer fallar el entrenamiento, y basta con dos clases para entrenar.
+
 Pseudo-etiquetado con umbrales (abajo): un píxel se etiqueta solo si cumple **exactamente una** regla; los que cumplen varias (p. ej. ríos con sedimento, que son "agua" y "suelo" a la vez) se descartan como ambiguos. Submuestreo **proporcional** estratificado (≤ 60 000 muestras, conservando la proporción real de cada clase con un mínimo de 1 000 para clases raras), partición hold-out estratificada 75/25 y `RandomForestClassifier(n_estimators=150)` sobre **16 variables** (7 índices + 9 bandas). Se reportan exactitud, kappa de Cohen, OOB, matriz de confusión, precisión/recall por clase e importancia de variables. La validación mide el acuerdo con las pseudo-etiquetas, no con datos de campo.
 
 ```

@@ -35,7 +35,7 @@ A guided, Colombia-focused change-detection workflow that runs end to end on rea
 - Current classes: Vegetación, Agua, Minería / suelo expuesto, Sin datos / nube.
 - Outputs today: before/after map slider, comparison figure, area tables in hectares, change polygons (GeoJSON), area CSV, printable HTML report.
 - Journalist needs (confirmed): publishable before/after images, trend charts, and figures with their uncertainty.
-- **Open decision — forest vs. pasture.** Deforestation in Colombia mostly converts forest into pasture or crops; both fall into "Vegetación" today, so the main story the journalist wants is not yet measurable. A forest / non-forest distinction is required before deforestation figures can be reported.
+- **Forest vs. pasture — resolved with WorldCover (2026-10-13).** Two training methods: course rules (3 classes) and ESA WorldCover 2021 labels (forest, water, bare soil/mining, urban, grass/crops). Guided mode uses WorldCover, so forest turned into pasture counts as forest loss. **Open:** with one scene per year the forest series is noisy (±~1,000 ha year to year in Guaviare), too noisy for slow losses that Impact Observatory detects (~-56 ha/yr); annual multi-scene composites are the next step.
 - Validation is against pseudo-labels, not field data; any figure must be presented as an estimate.
 
 ## Evidence on Hand
