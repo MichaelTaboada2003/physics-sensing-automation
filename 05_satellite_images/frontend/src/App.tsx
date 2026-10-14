@@ -89,7 +89,7 @@ const STEPS: { id: AppStep; label: string; title: string; purpose: string }[] = 
 const GUIDED_STAGES: { id: GuidedStage; label: string; title: string; purpose: string }[] = [
   {
     id: 'zone', label: 'Elegir zona', title: '¿Qué cambió en este lugar?',
-    purpose: 'Elige una zona y revisamos cómo cambió su vegetación en los últimos 10 años.',
+    purpose: 'Elige una zona y revisamos cómo cambió su cobertura (bosque, agua, zonas urbanas…) en los últimos 10 años.',
   },
   {
     id: 'running', label: 'Análisis', title: 'Analizando la zona',
@@ -97,7 +97,7 @@ const GUIDED_STAGES: { id: GuidedStage; label: string; title: string; purpose: s
   },
   {
     id: 'results', label: 'Resultados', title: 'Resultados',
-    purpose: 'La tendencia de la vegetación, con su incertidumbre, y el material listo para publicar.',
+    purpose: 'La tendencia del bosque y de las demás coberturas, con su incertidumbre, y el material listo para publicar.',
   },
 ];
 

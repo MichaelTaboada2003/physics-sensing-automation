@@ -9,7 +9,6 @@ import { useProgressStream } from '../hooks/useProgressStream';
 import { useLayerBounds } from '../hooks/useLayerBounds';
 import { useMapStats } from '../hooks/useMapStats';
 import { PRESETS, bboxIsTooLarge } from '../lib/geo';
-import { DEFAULT_THRESHOLDS } from '../lib/classifier';
 import { RULES_DEFS, chartColor, dePhrase, phrase } from '../lib/classes';
 import AoiMap from './map/AoiMap';
 import SwipeMap from './map/SwipeMap';
@@ -25,7 +24,7 @@ import type { GuidedRun, GuidedStage, TaskId } from '../lib/guided';
 const TASKS: { id: TaskId; label: string; detail: string }[] = [
   { id: 'scene', label: 'Buscar la imagen más despejada', detail: 'Entre las imágenes del último año, la que tiene menos nubes sobre la zona.' },
   { id: 'bands', label: 'Descargar la imagen', detail: 'Nueve bandas de luz, de lo visible al infrarrojo, y la máscara de nubes.' },
-  { id: 'train', label: 'Aprender a reconocer la cobertura', detail: 'Vegetación, agua y suelo expuesto, a partir de reglas espectrales.' },
+  { id: 'train', label: 'Aprender a reconocer la cobertura', detail: 'Bosque, pastos y cultivos, agua, suelo expuesto y zonas urbanas, con ejemplos del mapa ESA WorldCover.' },
   { id: 'map', label: 'Clasificar la zona', detail: 'Cada píxel de 10 × 10 m recibe una clase.' },
   { id: 'series', label: 'Revisar los 10 años anteriores', detail: 'La misma temporada de cada año, clasificada con el mismo modelo.' },
 ];
@@ -158,7 +157,8 @@ export default function GuidedFlow({
       await stream(`${API_BASE}/download`, { session_id: session.session_id });
       finish(task);
       task = 'train'; setCurrent(task);
-      await stream(`${API_BASE}/train`, { session_id: session.session_id, ...DEFAULT_THRESHOLDS });
+      // El modo guiado entrena con WorldCover: distingue bosque de pastos y reconoce lo urbano
+      await stream(`${API_BASE}/train`, { session_id: session.session_id, method: 'worldcover' });
       finish(task);
       task = 'map'; setCurrent(task);
       await stream(`${API_BASE}/predict`, { session_id: session.session_id });
@@ -530,8 +530,17 @@ function GuidedResults({
           <Info className="w-4 h-4 text-ink-2" aria-hidden /> Qué mide esta herramienta y qué no
         </h2>
         <ul className="mt-2 space-y-1.5 text-ink-2 list-disc pl-5">
-          <li><b className="text-ink">«Vegetación» incluye bosque, pastos y cultivos.</b> Aún no distingue un bosque talado convertido en potrero: esa deforestación puede no aparecer como pérdida.</li>
-          <li>Las cifras son estimaciones de un modelo entrenado con reglas espectrales, no mediciones de campo.</li>
+          {main.key === 'forest' ? (
+            <>
+              <li><b className="text-ink">El bosque se distingue de pastos y cultivos</b>, así que un bosque talado convertido en potrero cuenta como pérdida de bosque.</li>
+              <li>El modelo aprende con ejemplos del mapa ESA WorldCover 2021 (exactitud global ≈ 76 %). Las cifras son estimaciones, no mediciones de campo.</li>
+            </>
+          ) : (
+            <>
+              <li><b className="text-ink">«Vegetación» incluye bosque, pastos y cultivos.</b> Con este método no se distingue un bosque talado convertido en potrero: esa deforestación puede no aparecer como pérdida.</li>
+              <li>Las cifras son estimaciones de un modelo entrenado con reglas espectrales, no mediciones de campo.</li>
+            </>
+          )}
           <li>Cada año se compara con una sola imagen de la misma temporada; nubes, crecientes de ríos o sequías pueden mover un año aislado.</li>
         </ul>
       </section>
