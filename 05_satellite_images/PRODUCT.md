@@ -32,17 +32,19 @@ A guided, Colombia-focused change-detection workflow that runs end to end on rea
 
 - Data: Sentinel-2 L2A from Microsoft Planetary Computer; reliable coverage from 2017, irregular before.
 - Region: any AOI worldwide (decision 2026-10-09, reverting the Colombia-only scope); Colombia stays the focus through Colombian example zones, a reference outline on the map and place search that lists Colombian matches first. AOI up to 500 km².
-- Current classes: Vegetación, Agua, Minería / suelo expuesto, Sin datos / nube.
+- Classes: rules scheme (Vegetación, Agua, Suelo expuesto / minería) or WorldCover scheme (Bosque, Agua, Suelo expuesto / minería, Urbano / construido, Pastos y cultivos), plus Sin datos / nube.
 - Outputs today: before/after map slider, comparison figure, area tables in hectares, change polygons (GeoJSON), area CSV, printable HTML report.
 - Journalist needs (confirmed): publishable before/after images, trend charts, and figures with their uncertainty.
 - **Forest vs. pasture — resolved with WorldCover (2026-10-13).** Two training methods: course rules (3 classes) and ESA WorldCover 2021 labels (forest, water, bare soil/mining, urban, grass/crops). Guided mode uses WorldCover, so forest turned into pasture counts as forest loss. **Open:** with one scene per year the forest series is noisy (±~1,000 ha year to year in Guaviare), too noisy for slow losses that Impact Observatory detects (~-56 ha/yr); annual multi-scene composites are the next step.
+- **Heat (2026-10-13).** Land surface temperature from Landsat 8/9 (Sentinel-2 has no thermal band): per-class temperature and warming of lost vs. kept forest (difference-in-differences, detrended, block-bootstrap CI). Surface temperature at ~10:30 a.m., not air temperature; thermal detail is ~100 m; from 2013.
 - Validation is against pseudo-labels, not field data; any figure must be presented as an estimate.
 
 ## Evidence on Hand
 
 - Real outputs reproduced on El Bagre (2016–2025): vegetation −93.6 ha/yr (p = 0.009), mining +42.7 ha/yr (p = 0.047), water not significant.
 - Verified example zones: El Bagre, Río Quito, Hidroituango (river in 2017, reservoir in 2025), Cerrejón, San José del Guaviare, Ciénaga Grande.
-- Imagery credit required on publication: "Contiene datos modificados de Copernicus Sentinel-2 [año]".
+- Imagery credit required on publication: "Contiene datos modificados de Copernicus Sentinel-2 [año]"; heat figures also credit Landsat 8/9 (USGS).
+- Heat on San José del Guaviare 2017→2025: deforested pixels warmed +1.4 °C more than kept forest (95% CI 1.2–1.7 °C).
 - No testimonials, users, publications or field validation exist; none may be implied.
 
 ## Product Principles

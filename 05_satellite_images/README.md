@@ -19,9 +19,10 @@ Aplicación web que lleva el flujo del notebook `actividad.ipynb` a una interfaz
 │   │   ├── indices.py    # NDVI, BSI, NDWI, MNDWI, NDBI, EVI, SAVI
 │   │   ├── classifier.py # Pseudo-etiquetado, Random Forest y métricas hold-out
 │   │   ├── compare.py    # Comparativa por año, serie temporal, capas para el mapa
+│   │   ├── thermal.py    # Temperatura de superficie (Landsat 8/9), calor vs. deforestación
 │   │   ├── export.py     # PNG clasificado + GeoTIFF
 │   │   └── report.py     # Reporte HTML, CSV de superficies, GeoJSON de cambios
-│   └── routers/          # search, bands, indices, classifier, export, compare
+│   └── routers/          # search, bands, indices, classifier, export, compare, region, heat
 ├── frontend/             # React + TypeScript + Vite + Tailwind + Leaflet + Recharts — puerto 5177
 │   └── src/
 │       ├── components/
@@ -34,6 +35,8 @@ Aplicación web que lleva el flujo del notebook `actividad.ipynb` a una interfaz
 │       │   ├── MapPanel.tsx         # Paso 5: mapa interactivo y exportación
 │       │   ├── ComparePanel.tsx     # Paso 6: comparativa de un año (slider antes/después)
 │       │   ├── TimeSeriesPanel.tsx  #   serie de 10 años con tendencias
+│       │   ├── HeatPanel.tsx        # Paso 7: temperatura de superficie
+│       │   ├── heat/                #   mapa, leyenda, hallazgos y bloque del modo guiado
 │       │   └── map/                 # AoiMap, SwipeMap, LayerControls, capas base
 │       ├── hooks/                   # useProgressStream (NDJSON), useLayerBounds
 │       └── lib/                     # zonas de ejemplo, colores de gráficos
@@ -71,7 +74,7 @@ npm install && npm run dev
 ## 🧭 Dos modos
 
 - **Guiado** (para periodistas y no especialistas): eliges una zona y un solo botón ejecuta todo el análisis (escena más despejada del último año → bandas → modelo con las reglas por defecto → mapa → serie de 10 años). El resultado es una frase con la tendencia de la vegetación, su intervalo de confianza y su significancia; un mapa antes/después; el gráfico de hectáreas por año; las descargas listas para publicar (imagen antes/después y gráfico de tendencia con el crédito de Copernicus, CSV, reporte) y un recuadro con lo que la herramienta mide y lo que no.
-- **Experto**: los 6 pasos con todos los parámetros. La sesión es la misma: «Ver el análisis completo» abre en modo experto lo calculado en modo guiado.
+- **Experto**: los 7 pasos con todos los parámetros. La sesión es la misma: «Ver el análisis completo» abre en modo experto lo calculado en modo guiado.
 
 El selector está arriba del riel lateral y se recuerda en el navegador.
 
@@ -79,7 +82,7 @@ El selector está arriba del riel lateral y se recuerda en el navegador.
 
 Mundo visual «pliego de herbario» (tradición del Herbario Nacional Colombiano): cartón de montaje gris verdoso, papel de etiqueta, tinta ferrogálica, riel verde carpeta, violeta de sello de accesión para las acciones y un rojo reservado solo para el cambio estadísticamente significativo. Cada zona analizada lleva su **etiqueta de ejemplar** (localidad, coordenadas, fecha, satélite, nubes, cobertura por clase) y cada año comparado le agrega una **ficha de determinación** fechada. Tipografías autoalojadas: Atkinson Hyperlegible Next (interfaz), Source Serif 4 (títulos y localidades) y Courier Prime (cifras). Paletas de clases y de cambios validadas para daltonismo. Contexto de producto en `PRODUCT.md`.
 
-## 🗺️ Flujo de la Aplicación (6 pasos)
+## 🗺️ Flujo de la Aplicación (7 pasos)
 
 ### Paso 1 — Zona y escena
 La zona puede estar en cualquier lugar del mundo; las zonas de ejemplo son colombianas y el buscador (Nominatim) **prioriza Colombia**: muestra primero los resultados en el país y luego los del resto del mundo, cada uno con su región y país. El contorno de Colombia (Natural Earth, `backend/resources/colombia.geojson`, `GET /region`) se dibuja como referencia, sin restringir el mapa. Zonas de ejemplo: El Bagre, Río Quito, Hidroituango, Cerrejón, San José del Guaviare, Ciénaga Grande. Máximo 500 km².
@@ -122,6 +125,13 @@ Capa de clasificación, NDVI o color real superpuesta al mapa satelital con opac
 ### Paso 6 — Comparativa Temporal
 - **Un año** (`POST /compare`): escena de la misma temporada (±60 días; si no hay, todo el año) con menos nubes en la zona, alineada píxel a píxel y clasificada con el **mismo** modelo. Slider **antes/después** sobre el mapa (color real, clasificación, NDVI o mapa de cambios), figura comparativa, superficies y transiciones (p. ej. vegetación → minería) y **GeoJSON** de polígonos de cambio (`GET /export/changes.geojson`, manchas < 0.5 ha filtradas).
 - **Serie de 10 años** (`POST /timeseries`): procesa los años en paralelo y estima la tendencia de cada clase sobre el % del área sin nubes (solo años con ≥ 50 % de la zona despejada) con la **pendiente de Theil-Sen** (mediana de pendientes entre pares de años, robusta frente a años atípicos, con IC 95 %) y la **prueba de Mann-Kendall** (p-valor; significativa si p < 0.05). Sentinel-2 L2A tiene cobertura irregular antes de 2017.
+
+### Paso 7 — Calor (temperatura de la superficie)
+Sentinel-2 no tiene banda térmica, así que el calor se mide con **Landsat 8/9 Collection 2 Level-2** (`landsat-c2-l2` en Planetary Computer): banda ST_B10, `T(°C) = DN · 0.00341802 + 149.0 − 273.15`, con la máscara QA_PIXEL (relleno, nubes, nubes dilatadas, cirros, sombras, nieve). Se elige la escena con más zona despejada en la misma temporada (±60 días) y se reproyecta sobre la grilla de la sesión. Es la temperatura de la **superficie** hacia las 10:30 a. m., no la del aire, y el sensor mide a 100 m. Desde 2013.
+- **Por cobertura**: temperatura media y rango p10–p90 de cada clase (p. ej. urbano vs. bosque).
+- **Calor vs. deforestación** (`POST /heat` con `year`): compara los píxeles que perdieron la clase principal entre ese año y hoy con los que la conservaron. La cifra es una **diferencia de diferencias** del ΔLST, tras restar una superficie cuadrática ajustada al ΔLST del bosque conservado (el clima y la bruma de cada fecha cambian de forma suave a lo ancho de la escena). IC 95 % por **bootstrap de bloques de 300 m** (los píxeles vecinos no son independientes). En San José del Guaviare 2017→2025: lo deforestado (592 ha) se calentó **+1,4 °C** más que el bosque conservado (IC 1,2–1,7 °C) y hoy está 3,4 °C más caliente.
+- Capas `GET /heat/layer?kind=lst|delta`: temperatura con escala fija para ambos años (cortina antes/después) y calentamiento relativo al bosque conservado (divergente morado–gris–naranja).
+- En el modo guiado, el bloque «¿Se calentó la zona?» lo calcula a demanda contra el año base de la comparación.
 
 ### Salidas para publicar
 - `GET /export/beforeafter.png?year=…&kind=rgb|class&title=…` — antes/después con fechas, barra de escala y crédito «Contiene datos modificados de Copernicus Sentinel-2».
