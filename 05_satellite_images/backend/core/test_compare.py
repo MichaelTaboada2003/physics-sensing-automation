@@ -261,6 +261,10 @@ def test_train_reports_holdout_metrics():
     m = done["metrics"]
     assert m["accuracy"] > 0.9 and len(m["confusion_matrix"]) == 3
     assert len(m["feature_importances"]) == len(FEATURE_NAMES)
+    # Recuperables después (el modo guiado no lee el stream de entrenamiento)
+    assert client.get("/classifier/metrics", params={"session_id": sid}).json()["accuracy"] == m["accuracy"]
+    sid2, _ = _make_session()
+    assert client.get("/classifier/metrics", params={"session_id": sid2}).status_code == 409
 
 
 def test_scenes_endpoint_and_manual_selection():

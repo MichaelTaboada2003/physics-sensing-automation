@@ -23,6 +23,7 @@ export default defineConfig({
       '/export': 'http://localhost:8004',
       '/region': 'http://localhost:8004',
       '/heat': 'http://localhost:8004',
+      '/classifier': 'http://localhost:8004',
     },
   },
 })

@@ -12,6 +12,9 @@ Endpoints para ajuste de umbrales, entrenamiento del clasificador y predicción.
   POST /predict
       Aplica el clasificador a todos los píxeles y devuelve un Progress_Stream NDJSON.
 
+  GET /classifier/metrics?session_id=...
+      Métricas del último entrenamiento de la sesión (para volver a mostrarlas).
+
 Requisitos cubiertos: 5.3, 5.4, 5.5, 5.6, 5.7, 6.1–6.6, 7.1–7.5
 """
 
@@ -20,7 +23,7 @@ from __future__ import annotations
 import concurrent.futures
 from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -352,3 +355,20 @@ def predict(request: PredictRequest) -> StreamingResponse:
         predict_stream(request.session_id),
         media_type="application/x-ndjson",
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /classifier/metrics
+# ---------------------------------------------------------------------------
+
+@router.get("/classifier/metrics")
+def classifier_metrics(
+    session_id: str = Query(..., description="Identificador de la sesión activa."),
+) -> dict:
+    """Métricas hold-out del clasificador de la sesión (el modo guiado no las recibe en vivo)."""
+    session = get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail=f"Sesión '{session_id}' no encontrada o expirada.")
+    if session.classifier_metrics is None:
+        raise HTTPException(status_code=409, detail="La sesión aún no tiene un clasificador entrenado.")
+    return session.classifier_metrics
