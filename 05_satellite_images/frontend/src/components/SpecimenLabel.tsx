@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import type { ClassKey, ClassStat, Trend, Zone } from '../types';
+import type { ClassDef, ClassKey, ClassStat, Trend, Zone } from '../types';
+import { RULES_DEFS, slipDefs } from '../lib/classes';
 import { bboxAreaKm2 } from '../lib/geo';
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
@@ -9,9 +10,8 @@ import { bboxAreaKm2 } from '../lib/geo';
 export interface DeterminationSlip {
   year: number;
   date: string;
-  vegetation: number | null;
-  water: number | null;
-  mining: number | null;
+  /** % del área despejada por clave de clase. */
+  values: Record<string, number | null>;
 }
 
 interface SpecimenLabelProps {
@@ -19,9 +19,11 @@ interface SpecimenLabelProps {
   scene?: { id: string; datetime: string } | null;
   cloudFraction?: number | null;
   classes?: Record<ClassKey, ClassStat> | null;
+  /** Clases del esquema con que se entrenó (reglas o WorldCover). */
+  classDefs?: ClassDef[];
   /** Fichas de años anteriores; la más reciente queda arriba. */
   slips?: DeterminationSlip[];
-  /** Tendencia de la vegetación: el sello rojo solo aparece si es significativa. */
+  /** Tendencia de la clase principal (vegetación o bosque): el rojo solo si es significativa. */
   vegetationTrend?: Trend | null;
   /** Arranca plegada (móvil o mapas pequeños). */
   defaultCollapsed?: boolean;
@@ -48,16 +50,11 @@ function sceneMeta(id: string) {
 const pct = (v: number | null | undefined) =>
   v === null || v === undefined ? '—' : `${v.toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
 
-const CLASS_ROWS: { key: Exclude<ClassKey, 'unclassified'>; label: string; color: string }[] = [
-  { key: 'vegetation', label: 'Vegetación', color: 'bg-veg' },
-  { key: 'water', label: 'Agua', color: 'bg-water' },
-  { key: 'mining', label: 'Suelo / minería', color: 'bg-soil' },
-];
 
 // ── Componente ─────────────────────────────────────────────────────────────────
 
 export default function SpecimenLabel({
-  zone, scene, cloudFraction, classes, slips = [], vegetationTrend, defaultCollapsed = false, maxSlips = 4,
+  zone, scene, cloudFraction, classes, classDefs = RULES_DEFS, slips = [], vegetationTrend, defaultCollapsed = false, maxSlips = 4,
 }: SpecimenLabelProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const [w, s, e, n] = zone.bbox;
@@ -82,9 +79,13 @@ export default function SpecimenLabel({
                 <span className="figure text-muted">{slip.date}</span>
               </p>
               <p className="figure text-[0.8125rem] mt-0.5 flex gap-3">
-                <span className="text-veg-ink font-bold">V {pct(slip.vegetation)}</span>
-                <span className="text-water">A {pct(slip.water)}</span>
-                <span className="text-soil">S {pct(slip.mining)}</span>
+                {slipDefs(classDefs).map((d, j) => (
+                  <span key={d.key} className={`inline-flex items-center gap-1 ${j === 0 ? 'font-bold' : ''}`} title={d.label}>
+                    <span className="w-2 h-2 rounded-[2px]" style={{ background: d.color }} aria-hidden />
+                    <span className="sr-only">{d.label}</span>
+                    {pct(slip.values[d.key])}
+                  </span>
+                ))}
               </p>
             </li>
           ))}
@@ -141,9 +142,9 @@ export default function SpecimenLabel({
               <div className="mt-2 border-t border-rule pt-2">
                 <p className="text-xs font-semibold text-ink-2 mb-1">Determinación (% del área despejada)</p>
                 <ul className="space-y-0.5">
-                  {CLASS_ROWS.map(c => (
+                  {classDefs.filter(c => classes[c.key]).map(c => (
                     <li key={c.key} className="flex items-center gap-2 text-sm">
-                      <span className={`w-2.5 h-2.5 rounded-[2px] ${c.color}`} aria-hidden />
+                      <span className="w-2.5 h-2.5 rounded-[2px]" style={{ background: c.color }} aria-hidden />
                       <span className="text-ink-2">{c.label}</span>
                       <span className="figure ml-auto font-bold">{pct(classes[c.key].percent_clear)}</span>
                     </li>
@@ -159,7 +160,7 @@ export default function SpecimenLabel({
                 }`}
               >
                 <span className="font-bold">
-                  Vegetación {vegetationTrend.slope > 0 ? '+' : ''}
+                  {classDefs[0]?.label ?? 'Vegetación'} {vegetationTrend.slope > 0 ? '+' : ''}
                   <span className="figure">{(vegetationTrend.ha_per_year ?? 0).toLocaleString('es-CO', { maximumFractionDigits: 1 })}</span> ha/año
                 </span>
                 <span className="block text-xs mt-0.5">

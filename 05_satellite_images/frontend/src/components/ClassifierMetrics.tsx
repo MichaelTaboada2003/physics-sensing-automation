@@ -104,8 +104,9 @@ export default function ClassifierMetrics({ metrics }: { metrics: Metrics }) {
 
       <p className="flex items-start gap-2 text-sm text-ink-2 max-w-[75ch]">
         <Info className="w-4 h-4 shrink-0 mt-0.5 text-muted" />
-        La validación compara con las etiquetas de las reglas, no con datos de campo. Valores cercanos al 100 %
-        significan que el modelo reproduce las reglas, no que el mapa sea perfecto.
+        {metrics.method === 'worldcover'
+          ? 'La validación compara con WorldCover 2021, un mapa independiente pero no perfecto (≈ 76 % de exactitud) y de otro año: mide el acuerdo con ese mapa, no con datos de campo.'
+          : 'La validación compara con las etiquetas de las reglas, no con datos de campo. Valores cercanos al 100 % significan que el modelo reproduce las reglas, no que el mapa sea perfecto.'}
       </p>
     </div>
   );

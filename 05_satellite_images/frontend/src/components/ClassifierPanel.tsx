@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Eye, Play, Map as MapIcon, Loader2 } from 'lucide-react';
-import type { ClassifierMetrics as Metrics, StreamLine, ThresholdPreviewResponse } from '../types';
+import type { ClassMethod, ClassifierMetrics as Metrics, StreamLine, ThresholdPreviewResponse } from '../types';
 import ClassifierMetrics from './ClassifierMetrics';
 import { useProgressStream } from '../hooks/useProgressStream';
 import TaskProgress from './TaskProgress';
@@ -87,6 +87,8 @@ export default function ClassifierPanel({ sessionId, onComplete }: ClassifierPan
   const [trainError, setTrainError] = useState<string | null>(null);
   const [oobScore, setOobScore] = useState<number | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
+  // Fuente de etiquetas: reglas de umbral (método del curso) o ESA WorldCover
+  const [method, setMethod] = useState<ClassMethod>('rules');
 
   // ── Predict state ─────────────────────────────────────────────────────────────
   const [predictStatus, setPredictStatus] = useState<StepStatus>('idle');
@@ -98,7 +100,7 @@ export default function ClassifierPanel({ sessionId, onComplete }: ClassifierPan
 
   // ── Derived state ─────────────────────────────────────────────────────────────
   const canPreview  = previewStatus !== 'running';
-  const canTrain    = previewStatus === 'done' && trainStatus !== 'running';
+  const canTrain    = (method === 'worldcover' || previewStatus === 'done') && trainStatus !== 'running';
   const canPredict  = trainStatus === 'done' && predictStatus !== 'running';
 
   // ── Input handling ────────────────────────────────────────────────────────────
@@ -174,8 +176,8 @@ export default function ClassifierPanel({ sessionId, onComplete }: ClassifierPan
   }, []);
 
   const handleTrain = async () => {
-    const thresholds = validateThresholds();
-    if (!thresholds) return;
+    const thresholds = method === 'rules' ? validateThresholds() : null;
+    if (method === 'rules' && !thresholds) return;
 
     setTrainStatus('running');
     setTrainProgress(0);
@@ -187,7 +189,7 @@ export default function ClassifierPanel({ sessionId, onComplete }: ClassifierPan
     await consume(
       `${API_BASE}/train`,
       'POST',
-      JSON.stringify({ session_id: sessionId, ...thresholds }),
+      JSON.stringify(method === 'rules' ? { session_id: sessionId, method, ...thresholds } : { session_id: sessionId, method }),
       // onLine
       (line) => {
         appendTrainLog(line);
@@ -273,6 +275,42 @@ export default function ClassifierPanel({ sessionId, onComplete }: ClassifierPan
   return (
     <div className="space-y-6">
       {/* ── Reglas de pseudo-etiquetado ── */}
+      <section className="space-y-3" aria-labelledby="method-title">
+        <h2 id="method-title" className="font-serif text-xl font-semibold">¿De dónde salen los ejemplos?</h2>
+        <div className="segmented" role="radiogroup" aria-label="Método de entrenamiento">
+          {([
+            ['rules', 'Reglas del curso'],
+            ['worldcover', 'WorldCover (ESA)'],
+          ] as const).map(([m, label]) => (
+            <button
+              key={m}
+              role="radio"
+              aria-checked={method === m}
+              aria-pressed={method === m}
+              onClick={() => { setMethod(m); setTrainStatus('idle'); setMetrics(null); }}
+              disabled={trainStatus === 'running'}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-sm text-ink-2 max-w-[75ch]">
+          {method === 'rules'
+            ? 'Umbrales sobre NDVI, BSI y NDWI (el notebook del curso): 3 clases. En ciudades, techos y calles quedan forzados a vegetación, agua o suelo.'
+            : 'Los ejemplos salen del mapa ESA WorldCover 2021 (10 m, exactitud global ≈ 76 %): 5 clases, con urbano y con bosque separado de pastos y cultivos. Recomendado para ciudades y deforestación.'}
+        </p>
+        {method === 'worldcover' && (
+          <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-ink-2" aria-label="Clases de WorldCover">
+            {[['Bosque', '#14532d'], ['Agua', '#2563eb'], ['Suelo expuesto / minería', '#b45309'], ['Urbano / construido', '#db2777'], ['Pastos y cultivos', '#a3e635']].map(([l, c]) => (
+              <li key={l} className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-[2px]" style={{ background: c }} aria-hidden />{l}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {method === 'rules' && (
       <section className="sheet" aria-labelledby="rules-title">
         <div className="px-4 pt-4 pb-3 border-b border-rule">
           <h2 id="rules-title" className="font-serif text-xl font-semibold">Reglas de etiquetado</h2>
@@ -321,20 +359,21 @@ export default function ClassifierPanel({ sessionId, onComplete }: ClassifierPan
           )}
         </div>
       </section>
+      )}
 
       {/* ── Entrenar ── */}
       <section className="space-y-4" aria-labelledby="train-title">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 id="train-title" className="font-serif text-xl font-semibold">Entrenar el Random Forest</h2>
-            <p className="text-sm text-ink-2 mt-1">150 árboles sobre 16 variables (7 índices y 9 bandas), validado con un 25 % reservado.</p>
+            <p className="text-sm text-ink-2 mt-1">150 árboles sobre 16 variables (7 índices y 9 bandas), validado con un 25 % reservado.{method === 'worldcover' && ' Primero se lee WorldCover sobre la zona.'}</p>
           </div>
           <button onClick={handleTrain} disabled={!canTrain} className="btn btn-primary">
             {trainStatus === 'running' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
             {trainStatus === 'done' ? 'Volver a entrenar' : 'Entrenar modelo'}
           </button>
         </div>
-        {previewStatus !== 'done' && trainStatus === 'idle' && (
+        {method === 'rules' && previewStatus !== 'done' && trainStatus === 'idle' && (
           <p className="text-sm text-muted">Primero cuenta los píxeles para revisar que cada clase tenga ejemplos.</p>
         )}
         <TaskProgress

@@ -10,6 +10,7 @@ import { useLayerBounds } from '../hooks/useLayerBounds';
 import { useMapStats } from '../hooks/useMapStats';
 import { PRESETS, bboxIsTooLarge } from '../lib/geo';
 import { DEFAULT_THRESHOLDS } from '../lib/classifier';
+import { RULES_DEFS, chartColor, dePhrase, phrase } from '../lib/classes';
 import AoiMap from './map/AoiMap';
 import SwipeMap from './map/SwipeMap';
 import MapLegend from './MapLegend';
@@ -328,13 +329,16 @@ function GuidedResults({
   // Año base: el primero bien clasificado desde 2017 (antes, Sentinel-2 L2A es irregular)
   const candidates = series.points.filter(p => used.has(p.year) && p.year !== current.year);
   const base = candidates.find(p => p.year >= 2017) ?? candidates[0] ?? series.points[0];
-  const veg = series.trends.vegetation;
+  const defs = series.classes ?? RULES_DEFS;
+  const main = defs[0];
+  const mainPhrase = phrase(main);
+  const veg = series.trends[main.key];
   const total = series.total_hectares;
   // Años sin suficientes píxeles clasificados: hueco en el gráfico, nunca 0
   const chart = series.points.map(p => ({
     year: p.year,
-    ha: used.has(p.year) && p.stats.vegetation.percent_clear !== null
-      ? Math.round((p.stats.vegetation.percent_clear / 100) * total)
+    ha: used.has(p.year) && p.stats[main.key]?.percent_clear != null
+      ? Math.round((p.stats[main.key].percent_clear! / 100) * total)
       : null,
   }));
   const skipped = series.points.filter(p => !used.has(p.year)).map(p => p.year);
@@ -356,16 +360,14 @@ function GuidedResults({
     return { ...c, trend: Math.round(ym + (veg.ha_per_year ?? 0) * dx), band: [Math.round(Math.min(a, b)), Math.round(Math.max(a, b))] };
   });
   const trendColor = veg?.significant ? '#b42318' : '#5f6b77';
-  const others = (['water', 'mining'] as const)
-    .map(k => ({ k, t: series.trends[k] }))
+  // Otras clases con cambio significativo (en Hidroituango la historia es el agua)
+  const others = defs.slice(1)
+    .map(d => ({ d, t: series.trends[d.key] }))
     .filter(o => o.t?.significant);
-  const OTHER_LABEL = { water: 'el agua', mining: 'el suelo expuesto o minería' } as const;
   const slips: DeterminationSlip[] = series.points.filter(p => p.year !== current.year).map(p => ({
     year: p.year,
     date: p.scene.datetime.slice(0, 10),
-    vegetation: p.stats.vegetation.percent_clear,
-    water: p.stats.water.percent_clear,
-    mining: p.stats.mining.percent_clear,
+    values: Object.fromEntries(defs.map(d => [d.key, p.stats[d.key]?.percent_clear ?? null])),
   }));
   const title = encodeURIComponent(zone.name);
 
@@ -377,7 +379,7 @@ function GuidedResults({
           <p className="font-serif text-2xl">No hay suficientes años bien clasificados para estimar una tendencia en {zone.name}.</p>
         ) : veg.significant ? (
           <p className="font-serif text-[1.5rem] sm:text-[1.75rem] leading-snug">
-            En {zone.name}, la vegetación {veg.slope < 0 ? 'se redujo' : 'aumentó'}{' '}
+            En {zone.name}, {mainPhrase} {veg.slope < 0 ? 'se redujo' : 'aumentó'}{' '}
             <b className={veg.slope < 0 ? 'text-signal' : ''}>
               <span className="figure">{fmt(Math.abs(veg.ha_per_year ?? 0), 0)}</span> hectáreas por año
             </b>{' '}
@@ -386,7 +388,7 @@ function GuidedResults({
         ) : (
           // Sin significancia no se afirma un cambio: la cifra pasa a la línea secundaria
           <p className="font-serif text-[1.5rem] sm:text-[1.75rem] leading-snug">
-            En {zone.name}, los datos no muestran un cambio claro de la vegetación entre{' '}
+            En {zone.name}, los datos no muestran un cambio claro {dePhrase(main)} entre{' '}
             <span className="figure">{series.years_used_for_trend[0]}</span> y <span className="figure">{current.year}</span>.
           </p>
         )}
@@ -403,9 +405,9 @@ function GuidedResults({
           <p className="mt-2 text-ink-2">
             Sí cambió de forma significativa{' '}
             {others.map((o, i) => (
-              <span key={o.k}>
+              <span key={o.d.key}>
                 {i > 0 && ' y '}
-                {OTHER_LABEL[o.k]} (<span className="figure">{o.t!.slope > 0 ? '+' : '−'}{fmt(Math.abs(o.t!.ha_per_year ?? 0), 0)}</span> ha/año)
+                {phrase(o.d)} (<span className="figure">{o.t!.slope > 0 ? '+' : '−'}{fmt(Math.abs(o.t!.ha_per_year ?? 0), 0)}</span> ha/año)
               </span>
             ))}.
           </p>
@@ -423,7 +425,7 @@ function GuidedResults({
           <button type="button" onClick={() => setGrid(g => !g)} aria-pressed={grid} className={`btn !min-h-9 px-3 text-sm ${grid ? 'btn-primary' : 'btn-secondary'}`}>
             <Grid3x3 className="w-4 h-4" /> Retícula
           </button>
-          <MapLegend kind={layer} />
+          <MapLegend kind={layer} classDefs={defs} />
         </div>
         {bounds && (layer === 'change' ? (
           <SwipeMap
@@ -434,7 +436,7 @@ function GuidedResults({
             height="h-[440px] lg:h-[580px]"
           >
             <div className="hidden sm:block">
-              <SpecimenLabel zone={zone} scene={sceneInfo} cloudFraction={stats?.cloud_fraction} classes={stats?.classes} slips={slips} vegetationTrend={veg} maxSlips={2} />
+              <SpecimenLabel zone={zone} scene={sceneInfo} cloudFraction={stats?.cloud_fraction} classes={stats?.classes} classDefs={defs} slips={slips} vegetationTrend={veg} maxSlips={2} />
             </div>
           </SwipeMap>
         ) : (
@@ -447,7 +449,7 @@ function GuidedResults({
             height="h-[440px] lg:h-[580px]"
           >
             <div className="hidden sm:block">
-              <SpecimenLabel zone={zone} scene={sceneInfo} cloudFraction={stats?.cloud_fraction} classes={stats?.classes} slips={slips} vegetationTrend={veg} maxSlips={2} />
+              <SpecimenLabel zone={zone} scene={sceneInfo} cloudFraction={stats?.cloud_fraction} classes={stats?.classes} classDefs={defs} slips={slips} vegetationTrend={veg} maxSlips={2} />
             </div>
           </SwipeMap>
         ))}
@@ -458,14 +460,14 @@ function GuidedResults({
 
       {/* En móvil la etiqueta con sus fichas va debajo del mapa */}
       <div className="sm:hidden">
-        <SpecimenLabel zone={zone} scene={sceneInfo} cloudFraction={stats?.cloud_fraction} classes={stats?.classes} slips={slips} vegetationTrend={veg} />
+        <SpecimenLabel zone={zone} scene={sceneInfo} cloudFraction={stats?.cloud_fraction} classes={stats?.classes} classDefs={defs} slips={slips} vegetationTrend={veg} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
         {/* Evolución */}
         <figure className="sheet p-4">
           <figcaption className="mb-3">
-            <span className="block font-semibold">Hectáreas de vegetación por año</span>
+            <span className="block font-semibold">Hectáreas de {main.label.toLowerCase()} por año</span>
             <span className="block text-sm text-ink-2">
               {veg
                 ? <>Línea discontinua: tendencia de Theil-Sen ({veg.significant ? 'significativa' : 'no significativa'}, p = <span className="figure">{fmt(veg.p_value, 3)}</span>); franja: intervalo de confianza del 95 %.</>
@@ -490,7 +492,7 @@ function GuidedResults({
               />
               <Area dataKey="band" stroke="none" fill={trendColor} fillOpacity={0.12} isAnimationActive={false} />
               <Line dataKey="trend" stroke={trendColor} strokeWidth={1.5} strokeDasharray="6 4" dot={false} isAnimationActive={false} />
-              <Line dataKey="ha" stroke="#16a34a" strokeWidth={2} dot={{ r: 4, strokeWidth: 2, stroke: '#fbfcf8', fill: '#16a34a' }} connectNulls={false} isAnimationActive={false} />
+              <Line dataKey="ha" stroke={chartColor(main)} strokeWidth={2} dot={{ r: 4, strokeWidth: 2, stroke: '#fbfcf8', fill: chartColor(main) }} connectNulls={false} isAnimationActive={false} />
             </ComposedChart>
           </ResponsiveContainer>
         </figure>

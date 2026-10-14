@@ -1,20 +1,8 @@
-import type { LayerKind } from '../types';
-
-const CLASS_ITEMS = [
-  { label: 'Vegetación', swatch: 'bg-veg' },
-  { label: 'Agua', swatch: 'bg-water' },
-  { label: 'Suelo / minería', swatch: 'bg-soil' },
-];
-
-const CHANGE_ITEMS = [
-  { label: 'Pérdida de vegetación', swatch: 'bg-signal' },
-  { label: 'Ganancia de vegetación', swatch: 'bg-gain' },
-  { label: 'Nuevo suelo / minería', swatch: 'bg-newsoil' },
-  { label: 'Otro cambio', swatch: 'bg-other' },
-];
+import type { ClassDef, LayerKind } from '../types';
+import { RULES_DEFS } from '../lib/classes';
 
 /** Leyenda de la capa visible; las clases siempre llevan su nombre junto al color. */
-export default function MapLegend({ kind }: { kind: LayerKind }) {
+export default function MapLegend({ kind, classDefs = RULES_DEFS }: { kind: LayerKind; classDefs?: ClassDef[] }) {
   if (kind === 'rgb') {
     return <p className="text-sm text-ink-2">Color real (B04 · B03 · B02), mismo contraste para todos los años.</p>;
   }
@@ -28,12 +16,23 @@ export default function MapLegend({ kind }: { kind: LayerKind }) {
       </div>
     );
   }
-  const items = kind === 'class' ? CLASS_ITEMS : CHANGE_ITEMS;
+  const main = (classDefs[0]?.label ?? 'Vegetación').toLowerCase();
+  const hasUrban = classDefs.some(c => c.key === 'urban');
+  // Colores del mapa de cambios: core/compare.py CHANGE_COLORS
+  const items = kind === 'class'
+    ? classDefs.map(c => ({ label: c.label, color: c.color }))
+    : [
+        { label: `Pérdida de ${main}`, color: '#b42318' },
+        { label: `Ganancia de ${main}`, color: '#0d9488' },
+        { label: 'Nuevo suelo / minería', color: '#f59e0b' },
+        ...(hasUrban ? [{ label: 'Nueva zona urbana', color: '#475569' }] : []),
+        { label: 'Otro cambio', color: '#7c3aed' },
+      ];
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-ink-2">
       {items.map(i => (
         <li key={i.label} className="flex items-center gap-1.5">
-          <span className={`w-3 h-3 rounded-[2px] ${i.swatch}`} aria-hidden />
+          <span className="w-3 h-3 rounded-[2px]" style={{ background: i.color }} aria-hidden />
           {i.label}
         </li>
       ))}

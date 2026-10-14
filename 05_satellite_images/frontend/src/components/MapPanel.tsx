@@ -72,7 +72,7 @@ export default function MapPanel({ sessionId, zone, sceneInfo, onReset, onCompar
             graticule={grid}
             onGraticule={setGrid}
           />
-          <MapLegend kind={layerKind} />
+          <MapLegend kind={layerKind} classDefs={stats?.class_defs} />
         </div>
         {bounds ? (
           <SwipeMap
@@ -89,6 +89,7 @@ export default function MapPanel({ sessionId, zone, sceneInfo, onReset, onCompar
                   scene={sceneInfo}
                   cloudFraction={stats?.cloud_fraction}
                   classes={stats?.classes}
+                  classDefs={stats?.class_defs}
                 />
               </div>
             )}
@@ -103,7 +104,8 @@ export default function MapPanel({ sessionId, zone, sceneInfo, onReset, onCompar
       {/* En móvil la etiqueta va debajo del mapa */}
       {zone && (
         <div className="sm:hidden">
-          <SpecimenLabel zone={zone} scene={sceneInfo} cloudFraction={stats?.cloud_fraction} classes={stats?.classes} />
+          <SpecimenLabel zone={zone} scene={sceneInfo} cloudFraction={stats?.cloud_fraction} classes={stats?.classes}
+                  classDefs={stats?.class_defs} />
         </div>
       )}
 

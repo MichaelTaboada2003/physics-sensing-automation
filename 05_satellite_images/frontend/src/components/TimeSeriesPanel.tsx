@@ -22,11 +22,10 @@ import {
 } from 'lucide-react';
 import type { StreamLine, TimeSeries, Trend } from '../types';
 import { useProgressStream } from '../hooks/useProgressStream';
-import { CLASS_CHART_COLORS, CLASS_CHART_LABELS } from '../lib/colors';
+import { RULES_DEFS, chartColor, phrase } from '../lib/classes';
 import TaskProgress from './TaskProgress';
 
 const API_BASE = '';
-const CLASS_KEYS = ['vegetation', 'water', 'mining'] as const;
 
 const AXIS_TICK = { fill: '#3d4856', fontSize: 12, fontFamily: 'Courier Prime, monospace' };
 const TOOLTIP_PROPS = {
@@ -101,18 +100,18 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
 
   // Años excluidos de la tendencia: hueco en los gráficos
   const used = new Set(series?.years_used_for_trend ?? []);
+  const defs = series?.classes ?? RULES_DEFS;
+  const main = defs[0];
   const data = series?.points.map(p => {
     const ok = used.has(p.year);
     return {
       year: p.year,
-      vegetation: ok ? p.stats.vegetation.percent_clear : null,
-      water: ok ? p.stats.water.percent_clear : null,
-      mining: ok ? p.stats.mining.percent_clear : null,
+      ...Object.fromEntries(defs.map(d => [d.key, ok ? p.stats[d.key]?.percent_clear ?? null : null])),
       ndvi: ok ? p.ndvi_mean : null,
     };
   }) ?? [];
 
-  const veg = series?.trends.vegetation;
+  const veg = series?.trends[main.key];
   const span = series ? `${series.points[0]?.year}–${series.points[series.points.length - 1]?.year}` : '';
 
   return (
@@ -147,7 +146,7 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
         <div className="space-y-6 animate-fade-in">
           {veg && (
             <p className="text-lg max-w-[70ch] leading-relaxed">
-              Entre <span className="figure">{span}</span> la vegetación cambió{' '}
+              Entre <span className="figure">{span}</span> {phrase(main)} cambió{' '}
               <span className={`figure font-bold ${veg.significant && veg.slope < 0 ? 'text-signal' : ''}`}>
                 {veg.slope > 0 ? '+' : ''}{fmt(veg.ha_per_year, 1)} ha por año
               </span>{' '}
@@ -181,14 +180,15 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
                 </tr>
               </thead>
               <tbody>
-                {CLASS_KEYS.map(k => {
+                {defs.map(d => {
+                  const k = d.key;
                   const t = series.trends[k];
                   return (
                     <tr key={k}>
                       <td>
                         <span className="flex items-center gap-2 font-semibold">
-                          <span className="w-2.5 h-2.5 rounded-[2px]" style={{ background: CLASS_CHART_COLORS[k] }} aria-hidden />
-                          {CLASS_CHART_LABELS[k]}
+                          <span className="w-2.5 h-2.5 rounded-[2px]" style={{ background: d.color }} aria-hidden />
+                          {d.label}
                         </span>
                       </td>
                       {t ? (
@@ -226,14 +226,14 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
                 <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} unit=" %" domain={[0, 100]} />
                 <Tooltip {...TOOLTIP_PROPS} formatter={(v, name) => [`${fmt(Number(v), 1)} %`, name]} />
                 <Legend wrapperStyle={{ fontSize: 13 }} iconType="plainline" formatter={v => <span style={{ color: '#3d4856' }}>{v}</span>} />
-                {CLASS_KEYS.map(k => (
+                {defs.map(d => (
                   <Line
-                    key={k}
-                    dataKey={k}
-                    name={CLASS_CHART_LABELS[k]}
-                    stroke={CLASS_CHART_COLORS[k]}
+                    key={d.key}
+                    dataKey={d.key}
+                    name={d.label}
+                    stroke={chartColor(d)}
                     strokeWidth={2}
-                    dot={{ r: 4, strokeWidth: 2, stroke: DOT_RING, fill: CLASS_CHART_COLORS[k] }}
+                    dot={{ r: 4, strokeWidth: 2, stroke: DOT_RING, fill: chartColor(d) }}
                     activeDot={{ r: 6, strokeWidth: 2, stroke: DOT_RING }}
                     connectNulls={false}
                     isAnimationActive={false}
@@ -260,9 +260,9 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
                 <Tooltip {...TOOLTIP_PROPS} formatter={v => [fmt(Number(v), 3), 'NDVI medio']} />
                 <Line
                   dataKey="ndvi"
-                  stroke={CLASS_CHART_COLORS.vegetation}
+                  stroke={chartColor(main)}
                   strokeWidth={2}
-                  dot={{ r: 4, strokeWidth: 2, stroke: DOT_RING, fill: CLASS_CHART_COLORS.vegetation }}
+                  dot={{ r: 4, strokeWidth: 2, stroke: DOT_RING, fill: chartColor(main) }}
                   activeDot={{ r: 6, strokeWidth: 2, stroke: DOT_RING }}
                   connectNulls={false}
                   isAnimationActive={false}
@@ -279,8 +279,8 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
                   <th scope="col">Año</th>
                   <th scope="col">Escena</th>
                   <th scope="col" className="!text-right">Clasificado</th>
-                  {CLASS_KEYS.map(k => (
-                    <th key={k} scope="col" className="!text-right">{CLASS_CHART_LABELS[k]}</th>
+                  {defs.map(d => (
+                    <th key={d.key} scope="col" className="!text-right">{d.label}</th>
                   ))}
                   <th scope="col" className="!text-right">NDVI</th>
                   <th scope="col"><span className="sr-only">Acción</span></th>
@@ -296,8 +296,8 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
                       <td className={`num ${lowClear ? 'text-soil font-bold' : ''}`} title={lowClear ? 'Menos del 50 % clasificado: excluido de la tendencia' : undefined}>
                         {fmt(p.valid_percent, 0)} %
                       </td>
-                      {CLASS_KEYS.map(k => (
-                        <td key={k} className="num">{fmt(p.stats[k].percent_clear, 1)} %</td>
+                      {defs.map(d => (
+                        <td key={d.key} className="num">{fmt(p.stats[d.key]?.percent_clear, 1)} %</td>
                       ))}
                       <td className="num">{fmt(p.ndvi_mean, 3)}</td>
                       <td className="text-right">

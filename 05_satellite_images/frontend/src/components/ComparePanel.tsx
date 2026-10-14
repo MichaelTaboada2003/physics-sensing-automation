@@ -5,7 +5,8 @@ import SwipeMap from './map/SwipeMap';
 import LayerControls from './map/LayerControls';
 import TimeSeriesPanel from './TimeSeriesPanel';
 import { Play, Loader2, Download, FileText, CalendarRange, Image as ImageIcon, LineChart as LineChartIcon } from 'lucide-react';
-import type { StreamLine, ComparisonSummary, ClassKey, Zone } from '../types';
+import type { StreamLine, ComparisonSummary, ClassDef, Zone } from '../types';
+import { RULES_DEFS, phrase } from '../lib/classes';
 import { useProgressStream } from '../hooks/useProgressStream';
 import { useMapStats } from '../hooks/useMapStats';
 import TaskProgress from './TaskProgress';
@@ -18,23 +19,13 @@ import type { DeterminationSlip } from './SpecimenLabel';
 const API_BASE = '';
 const MAX_YEARS_BACK = 10;
 
-const CLASS_ROWS: { key: ClassKey; label: string; color: string }[] = [
-  { key: 'vegetation',   label: 'Vegetación',       color: 'bg-veg'   },
-  { key: 'water',        label: 'Agua',             color: 'bg-water' },
-  { key: 'mining',       label: 'Suelo / minería',  color: 'bg-soil'  },
-  { key: 'unclassified', label: 'Sin datos / nube', color: 'bg-ink'   },
-];
 
 type Tab = 'year' | 'series';
 
-// Índices en la matriz de transiciones (orden del backend: veg, agua, minería, sin datos)
-const TRANSITIONS: { label: string; from: number; to: number }[] = [
-  { label: 'Vegetación → suelo / minería', from: 0, to: 2 },
-  { label: 'Vegetación → agua', from: 0, to: 1 },
-  { label: 'Suelo / minería → vegetación', from: 2, to: 0 },
-  { label: 'Agua → vegetación', from: 1, to: 0 },
+// Transiciones de interés, por clave de clase ('P' = clase principal: vegetación o bosque)
+const TRANSITION_PAIRS: [string, string][] = [
+  ['P', 'mining'], ['P', 'urban'], ['P', 'grass'], ['P', 'water'], ['mining', 'P'], ['grass', 'P'], ['water', 'P'],
 ];
-
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type CompareStatus = 'idle' | 'running' | 'done' | 'error';
@@ -134,26 +125,20 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo }: 
   const active = activeYear !== null ? results[activeYear] : null;
   const computedYears = Object.keys(results).map(Number).sort((a, b) => b - a);
 
+  // Clases del esquema con que se entrenó (reglas o WorldCover)
+  const defs: ClassDef[] = series?.classes ?? active?.classes ?? stats?.class_defs ?? RULES_DEFS;
+  const main = defs[0];
+  const valuesOf = (st: Record<string, { percent_clear: number | null }>) =>
+    Object.fromEntries(defs.map(d => [d.key, st[d.key]?.percent_clear ?? null]));
+
   // Fichas de determinación para la etiqueta: serie (si existe) + comparativas sueltas
   const slipsByYear = new Map<number, DeterminationSlip>();
   for (const [y, r] of Object.entries(results)) {
-    slipsByYear.set(Number(y), {
-      year: Number(y),
-      date: r.past_scene.datetime.slice(0, 10),
-      vegetation: r.past.vegetation.percent_clear,
-      water: r.past.water.percent_clear,
-      mining: r.past.mining.percent_clear,
-    });
+    slipsByYear.set(Number(y), { year: Number(y), date: r.past_scene.datetime.slice(0, 10), values: valuesOf(r.past) });
   }
   for (const p of series?.points ?? []) {
     if (p.year === sceneYear) continue;
-    slipsByYear.set(p.year, {
-      year: p.year,
-      date: p.scene.datetime.slice(0, 10),
-      vegetation: p.stats.vegetation.percent_clear,
-      water: p.stats.water.percent_clear,
-      mining: p.stats.mining.percent_clear,
-    });
+    slipsByYear.set(p.year, { year: p.year, date: p.scene.datetime.slice(0, 10), values: valuesOf(p.stats) });
   }
   const slips = [...slipsByYear.values()];
   const currentPoint = series?.points.find(p => p.year === sceneYear);
@@ -163,15 +148,26 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo }: 
     scene: sceneInfo,
     cloudFraction: stats?.cloud_fraction,
     classes: stats?.classes ?? currentPoint?.stats,
+    classDefs: defs,
     slips,
-    vegetationTrend: series?.trends.vegetation,
+    vegetationTrend: series?.trends[main.key],
   };
   const label = labelProps && <SpecimenLabel {...labelProps} />;
   // Dentro del mapa caben menos fichas
   const mapLabel = labelProps && <SpecimenLabel {...labelProps} maxSlips={2} />;
 
-  const vegPast = active?.past.vegetation.hectares ?? 0;
-  const vegNow = active?.current.vegetation.hectares ?? 0;
+  const vegPast = active?.past[main.key]?.hectares ?? 0;
+  const vegNow = active?.current[main.key]?.hectares ?? 0;
+
+  // Posición de cada clase en la matriz de transiciones (orden del esquema + «sin datos»)
+  const rowOf = (key: string) => (key === 'P' ? 0 : defs.findIndex(d => d.key === key));
+  const transitions = TRANSITION_PAIRS
+    .filter(([a, b]) => rowOf(a) >= 0 && rowOf(b) >= 0)
+    .map(([a, b]) => ({
+      label: `${(a === 'P' ? main : defs[rowOf(a)]).label} → ${(b === 'P' ? main : defs[rowOf(b)]).label.toLowerCase()}`,
+      from: rowOf(a),
+      to: rowOf(b),
+    }));
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
@@ -291,7 +287,7 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo }: 
                     graticule={grid}
                     onGraticule={setGrid}
                   />
-                  <MapLegend kind={layerKind} />
+                  <MapLegend kind={layerKind} classDefs={defs} />
                 </div>
                 {bounds && (
                   layerKind === 'change' ? (
@@ -331,7 +327,7 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo }: 
                   Qué cambió entre <span className="figure">{active.year}</span> y <span className="figure">{sceneYear}</span>
                 </h2>
                 <p className="max-w-[70ch] text-ink-2">
-                  La vegetación pasó de <span className="figure text-ink font-bold">{fmtHa(vegPast)} ha</span> a{' '}
+                  {phrase(main).charAt(0).toUpperCase() + phrase(main).slice(1)} pasó de <span className="figure text-ink font-bold">{fmtHa(vegPast)} ha</span> a{' '}
                   <span className="figure text-ink font-bold">{fmtHa(vegNow)} ha</span>{' '}
                   (<span className={`figure font-bold ${vegNow < vegPast ? 'text-signal' : 'text-ink'}`}>{signed(vegNow - vegPast)} ha</span>).
                   El <span className="figure text-ink font-bold">{active.changed_percent.toLocaleString('es-CO', { maximumFractionDigits: 1 })} %</span> de
@@ -351,19 +347,20 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo }: 
                         </tr>
                       </thead>
                       <tbody>
-                        {CLASS_ROWS.map(({ key, label: name, color }) => {
+                        {[...defs.map(d => ({ key: d.key, label: d.label, color: d.color })),
+                          { key: 'unclassified', label: 'Sin datos / nube', color: '#1b2430' }].map(({ key, label: name, color }) => {
                           const d = active.current[key].hectares - active.past[key].hectares;
                           return (
                             <tr key={key}>
                               <td>
                                 <span className="flex items-center gap-2">
-                                  <span className={`w-2.5 h-2.5 rounded-[2px] ${color}`} aria-hidden />
+                                  <span className="w-2.5 h-2.5 rounded-[2px]" style={{ background: color }} aria-hidden />
                                   {name}
                                 </span>
                               </td>
                               <td className="num">{fmtHa(active.past[key].hectares)}</td>
                               <td className="num">{fmtHa(active.current[key].hectares)}</td>
-                              <td className={`num font-bold ${key === 'vegetation' && d < 0 ? 'text-signal' : ''}`}>{signed(d)}</td>
+                              <td className={`num font-bold ${key === main.key && d < 0 ? 'text-signal' : ''}`}>{signed(d)}</td>
                             </tr>
                           );
                         })}
@@ -381,7 +378,7 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo }: 
                         </tr>
                       </thead>
                       <tbody>
-                        {TRANSITIONS.map(t => (
+                        {transitions.map(t => (
                           <tr key={t.label}>
                             <td>{t.label}</td>
                             <td className="num">

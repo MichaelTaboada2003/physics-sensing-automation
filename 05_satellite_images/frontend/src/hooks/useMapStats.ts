@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ClassKey, ClassStat } from '../types';
+import type { ClassDef, ClassKey, ClassMethod, ClassStat } from '../types';
 
 export interface MapStats {
   scene_id: string;
@@ -7,6 +7,8 @@ export interface MapStats {
   cloud_fraction: number | null;
   pixel_area_m2: number | null;
   classes: Record<ClassKey, ClassStat> | null;
+  scheme?: ClassMethod;
+  class_defs?: ClassDef[];
 }
 
 /** Datos de la etiqueta del ejemplar; `refreshKey` fuerza a volver a pedirlos. */

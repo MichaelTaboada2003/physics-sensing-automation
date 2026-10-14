@@ -11,6 +11,8 @@ export interface StreamLine {
   metrics?: ClassifierMetrics;
   comparison?: ComparisonSummary;
   series?: TimeSeries;
+  method?: ClassMethod;
+  classes?: ClassDef[];
 }
 
 export interface SearchRequest {
@@ -86,7 +88,18 @@ export interface ClassStat {
   percent_clear: number | null; // % del área sin nubes
 }
 
-export type ClassKey = 'vegetation' | 'water' | 'mining' | 'unclassified';
+/** Clave de clase del esquema (core/classes.py): vegetation, forest, water, mining, urban, grass… */
+export type ClassKey = string;
+
+/** Definición de una clase, enviada por el backend según el método de entrenamiento. */
+export interface ClassDef {
+  code: number;
+  key: string;
+  label: string;
+  color: string;
+}
+
+export type ClassMethod = 'rules' | 'worldcover';
 
 export interface SceneMeta {
   id: string;
@@ -105,6 +118,7 @@ export interface ComparisonSummary {
   transitions: number[][]; // filas = pasado, columnas = actual (veg, agua, minería, no clasif.)
   changed_percent: number;
   comparable_percent: number;
+  classes: ClassDef[];
 }
 
 export interface ClassifierMetrics {
@@ -112,6 +126,8 @@ export interface ClassifierMetrics {
   n_train: number;
   n_test: number;
   classes: string[];
+  class_codes?: number[];
+  method?: ClassMethod;
   feature_importances: { feature: string; importance: number }[];
   accuracy?: number;
   kappa?: number;
@@ -145,7 +161,8 @@ export interface SeriesPoint {
 
 export interface TimeSeries {
   points: SeriesPoint[];
-  trends: Record<'vegetation' | 'water' | 'mining', Trend | null>;
+  trends: Record<string, Trend | null>;
+  classes: ClassDef[];
   ndvi_trend: Trend | null;
   total_hectares: number;
   years_used_for_trend: number[];
