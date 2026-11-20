@@ -23,6 +23,18 @@ export function bboxIsTooLarge(b: BBox): boolean {
   return bboxAreaKm2(b) > MAX_AREA_KM2;
 }
 
+/** Grados y minutos: «7°36′N». */
+export function dms(value: number, pos: string, neg: string): string {
+  const abs = Math.abs(value);
+  let d = Math.floor(abs);
+  let m = Math.round((abs - d) * 60);
+  if (m === 60) { d += 1; m = 0; }
+  return `${d}°${String(m).padStart(2, '0')}′${value >= 0 ? pos : neg}`;
+}
+
+/** Centro de la zona como lo escribe una etiqueta de herbario: «7°36′N 74°48′O». */
+export const centerDms = ([w, s, e, n]: BBox) => `${dms((s + n) / 2, 'N', 'S')} ${dms((w + e) / 2, 'E', 'O')}`;
+
 // ── Contorno de Colombia (referencia en el mapa) ───────────────────────────────────────────────
 
 export interface Region {

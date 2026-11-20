@@ -2,13 +2,15 @@ import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { ClassDef, ClassKey, ClassStat, Trend, Zone } from '../types';
 import { RULES_DEFS, slipDefs } from '../lib/classes';
-import { bboxAreaKm2 } from '../lib/geo';
+import { bboxAreaKm2, centerDms } from '../lib/geo';
+import Stamp from './Stamp';
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
 /** Ficha de determinación de un año comparado (porcentajes del área despejada). */
 export interface DeterminationSlip {
   year: number;
+  /** Fecha de la escena o, en un compuesto, cuántas escenas votaron («6 escenas»). */
   date: string;
   /** % del área despejada por clave de clase. */
   values: Record<string, number | null>;
@@ -29,16 +31,13 @@ interface SpecimenLabelProps {
   defaultCollapsed?: boolean;
   /** Fichas visibles sobre la etiqueta (menos dentro de un mapa, para que quepa). */
   maxSlips?: number;
+  /** Escenas que componen el mapa del año actual (más de una = compuesto anual). */
+  nScenes?: number;
+  /** Sobre un mapa: sin satélite ni tile, para no tapar la imagen. */
+  compact?: boolean;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-function dms(value: number, pos: string, neg: string): string {
-  const abs = Math.abs(value);
-  const d = Math.floor(abs);
-  const m = Math.round((abs - d) * 60);
-  return `${d}°${String(m).padStart(2, '0')}′${value >= 0 ? pos : neg}`;
-}
 
 /** «S2A_MSIL2A_…» → «Sentinel-2A»; tile «T18NWP». */
 function sceneMeta(id: string) {
@@ -55,13 +54,12 @@ const pct = (v: number | null | undefined) =>
 
 export default function SpecimenLabel({
   zone, scene, cloudFraction, classes, classDefs = RULES_DEFS, slips = [], vegetationTrend, defaultCollapsed = false, maxSlips = 4,
+  nScenes = 1, compact = false,
 }: SpecimenLabelProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
-  const [w, s, e, n] = zone.bbox;
   const meta = scene ? sceneMeta(scene.id) : null;
   const ordered = [...slips].sort((a, b) => b.year - a.year);
   const visibleSlips = ordered.slice(0, maxSlips);
-  const significant = vegetationTrend?.significant;
 
   return (
     <section aria-label={`Etiqueta del ejemplar: ${zone.name}`} className="w-[300px] max-w-full">
@@ -71,7 +69,7 @@ export default function SpecimenLabel({
           {visibleSlips.map((slip, i) => (
             <li
               key={slip.year}
-              className="slip-enter relative bg-paper border border-rule rounded-t-[4px] px-3 pt-1.5 pb-2.5 shadow-[0_1px_2px_rgb(27_36_48/0.08)]"
+              className="slip-enter relative bg-paper bg-[image:var(--tex-paper)] border border-rule rounded-t-[4px] px-3 pt-1.5 pb-2.5 shadow-[0_1px_2px_rgb(27_36_48/0.08)]"
               style={{ marginLeft: `${(visibleSlips.length - 1 - i) * 6}px`, marginRight: `${i * 4}px`, animationDelay: `${i * 70}ms` }}
             >
               <p className="flex items-baseline justify-between text-xs">
@@ -93,7 +91,7 @@ export default function SpecimenLabel({
       )}
 
       {/* Etiqueta */}
-      <div className="relative bg-paper border border-rule-strong rounded-[4px] shadow-[var(--shadow-lift)]">
+      <div className="relative bg-paper bg-[image:var(--tex-paper)] border border-rule-strong rounded-[4px] shadow-[var(--shadow-lift)]">
         <button
           type="button"
           onClick={() => setCollapsed(c => !c)}
@@ -103,7 +101,7 @@ export default function SpecimenLabel({
           <span className="min-w-0">
             <span className="block font-serif italic text-lg leading-snug text-ink">{zone.name}</span>
             <span className="figure block text-sm text-ink-2 mt-0.5">
-              {dms((s + n) / 2, 'N', 'S')} {dms((w + e) / 2, 'E', 'O')}
+              {centerDms(zone.bbox)}
             </span>
           </span>
           {collapsed
@@ -120,9 +118,13 @@ export default function SpecimenLabel({
                 <>
                   <dt className="text-muted">Fecha</dt>
                   <dd className="figure text-right">{scene.datetime.slice(0, 10)}</dd>
-                  <dt className="text-muted">Satélite</dt>
-                  <dd className="figure text-right">{meta.collector}</dd>
-                  {meta.tile && (
+                  {!compact && (
+                    <>
+                      <dt className="text-muted">Satélite</dt>
+                      <dd className="figure text-right">{meta.collector}</dd>
+                    </>
+                  )}
+                  {!compact && meta.tile && (
                     <>
                       <dt className="text-muted">Tile</dt>
                       <dd className="figure text-right">{meta.tile}</dd>
@@ -134,6 +136,12 @@ export default function SpecimenLabel({
                 <>
                   <dt className="text-muted">Nubes en la zona</dt>
                   <dd className="figure text-right">{pct(cloudFraction * 100)}</dd>
+                </>
+              )}
+              {nScenes > 1 && (
+                <>
+                  <dt className="text-muted">Compuesto anual</dt>
+                  <dd className="figure text-right">voto de {nScenes} escenas</dd>
                 </>
               )}
             </dl>
@@ -154,20 +162,16 @@ export default function SpecimenLabel({
             )}
 
             {vegetationTrend && (
-              <p
-                className={`mt-2.5 text-sm rounded-[3px] px-2 py-1.5 border ${
-                  significant ? 'border-signal text-signal bg-signal-tint' : 'border-rule text-ink-2 bg-paper-2'
-                }`}
-              >
-                <span className="font-bold">
-                  {classDefs[0]?.label ?? 'Vegetación'} {vegetationTrend.slope > 0 ? '+' : ''}
-                  <span className="figure">{(vegetationTrend.ha_per_year ?? 0).toLocaleString('es-CO', { maximumFractionDigits: 1 })}</span> ha/año
-                </span>
-                <span className="block text-xs mt-0.5">
-                  {significant ? 'Tendencia significativa' : 'Sin tendencia significativa'} · Mann-Kendall p{' '}
-                  <span className="figure">{vegetationTrend.p_value < 0.001 ? '< 0,001' : `= ${vegetationTrend.p_value.toLocaleString('es-CO', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`}</span>
-                </span>
-              </p>
+              <div className="mt-2 border-t border-rule pt-2.5 pb-1 flex items-center justify-between gap-3">
+                <p className="text-sm leading-tight">
+                  <span className="block text-xs text-muted">Tendencia · {(classDefs[0]?.label ?? 'Vegetación').toLowerCase()}</span>
+                  <span className="figure font-bold">
+                    {vegetationTrend.slope > 0 ? '+' : vegetationTrend.slope < 0 ? '−' : ''}
+                    {Math.abs(vegetationTrend.ha_per_year ?? 0).toLocaleString('es-CO', { maximumFractionDigits: 1 })} ha/año
+                  </span>
+                </p>
+                <Stamp trend={vegetationTrend} small className="shrink-0 mr-1" />
+              </div>
             )}
 
             {ordered.length > visibleSlips.length && (
