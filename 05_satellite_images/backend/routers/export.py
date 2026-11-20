@@ -23,9 +23,11 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
 from core.classes import scheme_json
-from core.compare import class_stats, pixel_area_m2
+from core.compare import class_stats, current_entry, pixel_area_m2, scene_year
 from core.export import export_geotiff, render_classified_map
-from core.report import changes_geojson, render_before_after, render_trend_chart, report_html, stats_csv
+from core.report import (
+    changes_geojson, render_before_after, render_timelapse, render_trend_chart, report_html, stats_csv,
+)
 from session_store import get_session
 
 router = APIRouter()
@@ -325,15 +327,18 @@ def map_stats(
     """
     session = _get_session_or_404(session_id)
     has_bands = bool(session.bands)
+    has_map = session.class_map is not None
+    cur = current_entry(session) if has_map else None
     return {
         "scene_id": session.scene_id,
         "datetime": session.scene_datetime,
         "cloud_fraction": round(session.cloud_fraction, 4) if has_bands else None,
         "pixel_area_m2": pixel_area_m2(session) if has_bands else None,
-        "classes": (
-            class_stats(session.class_map, pixel_area_m2(session), session.class_scheme)
-            if session.class_map is not None else None
-        ),
+        # Con compuestos anuales las cifras son las del voto del año, no las de una escena
+        "classes": class_stats(cur["class_map"], pixel_area_m2(session), session.class_scheme) if cur else None,
+        "n_scenes": cur["n_scenes"] if cur else 1,
+        "scene_dates": sorted(s["datetime"][:10] for s in cur["scenes"]) if cur else [],
+        "scenes_per_year": session.scenes_per_year,
         "scheme": session.class_scheme,
         "class_defs": scheme_json(session.class_scheme),
     }
@@ -378,3 +383,25 @@ def export_trend(
     png = render_trend_chart(session, _clean_title(title))
     return Response(content=png, media_type="image/png",
                     headers={"Content-Disposition": 'attachment; filename="tendencia_vegetacion.png"'})
+
+
+@router.get("/export/timelapse.gif")
+def export_timelapse(
+    session_id: str = Query(..., description="Identificador de la sesión activa."),
+    kind: str = Query("rgb", pattern="^(rgb|class)$", description="rgb = color real, class = clasificación."),
+    title: str = Query("", max_length=200, description="Título opcional (p. ej. el nombre de la zona)."),
+    frame_ms: int = Query(900, ge=200, le=3000, description="Milisegundos por año."),
+) -> Response:
+    """GIF animado año por año (todos los años de la serie más el actual), con cifra y crédito."""
+    session = _get_session_or_404(session_id)
+    _require_class_map(session, session_id)
+    if len(session.comparisons) < 2:
+        raise HTTPException(status_code=409, detail="Calcule al menos dos años anteriores antes de exportar la animación.")
+    try:
+        gif = render_timelapse(session, kind, _clean_title(title), frame_ms)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Error al generar la animación: {exc}") from exc
+    first = min(session.comparisons)
+    return Response(content=gif, media_type="image/gif",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="linea_de_tiempo_{first}_{scene_year(session)}_{kind}.gif"'})

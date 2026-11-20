@@ -6,6 +6,7 @@ Exportaciones del análisis:
 - ``stats_csv``       : superficie por clase y año (CSV).
 - ``changes_geojson`` : polígonos de cambio entre un año y el actual (GeoJSON, EPSG:4326).
 - ``report_html``     : reporte autocontenido (imágenes embebidas) listo para imprimir a PDF.
+- ``render_before_after`` / ``render_trend_chart`` / ``render_timelapse`` : imágenes para publicar.
 """
 
 from __future__ import annotations
@@ -36,9 +37,11 @@ from core.compare import (
     build_series,
     build_summary,
     change_map,
+    current_entry,
     pixel_area_m2,
     render_comparison,
     scene_year,
+    year_entry,
 )
 from core.classes import primary, scheme
 from core.export import _class_map_to_index, class_palette, render_classified_map
@@ -57,14 +60,15 @@ def stats_csv(session: SessionData) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["year", "scene_id", "date", "clear_percent", "ndvi_mean",
-                "class", "hectares", "percent_total", "percent_clear"])
+                "class", "hectares", "percent_total", "percent_clear", "n_scenes", "scene_dates"])
     keys = [c.key for c in scheme(session.class_scheme)] + ["unclassified"]
     for p in series["points"]:
         for key in keys:
             st = p["stats"][key]
             w.writerow([p["year"], p["scene"]["id"], p["scene"]["datetime"][:10], p["clear_percent"],
                         p["ndvi_mean"], key, st["hectares"], st["percent"],
-                        "" if st["percent_clear"] is None else st["percent_clear"]])
+                        "" if st["percent_clear"] is None else st["percent_clear"],
+                        p["n_scenes"], " ".join(p["scene_dates"])])
     return buf.getvalue()
 
 
@@ -80,7 +84,7 @@ def changes_geojson(session: SessionData, year: int, min_area_ha: float = 0.5) -
     """
     comp = session.comparisons[year]
     labels = change_labels(session.class_scheme)
-    codes = change_map(comp["class_map"], session.class_map)
+    codes = change_map(comp["class_map"], session.active_map())
     codes[codes == 5] = 0  # sin datos → sin cambio
     area = pixel_area_m2(session)
     min_pixels = max(1, int(round(min_area_ha * 10_000 / area)))
@@ -176,6 +180,22 @@ def _fmt(v, digits=1, suffix="") -> str:
     return "—" if v is None else f"{v:,.{digits}f}{suffix}"
 
 
+def _method_note(session: SessionData) -> str:
+    """Cómo se midió cada año: una escena o un compuesto por voto."""
+    n = session.scenes_per_year
+    if n > 1:
+        return (f"Cada año es un compuesto: hasta {n} escenas clasificadas por separado, "
+                "clase por voto de probabilidades en cada píxel")
+    return "Cada año se mide con una sola escena de la misma temporada"
+
+
+def _when(point: dict) -> str:
+    """Fecha de la escena o, en un compuesto, cuántas escenas votaron."""
+    if point.get("n_scenes", 1) > 1:
+        return f"{point['n_scenes']} escenas ({point['scene_dates'][0][5:]} a {point['scene_dates'][-1][5:]})"
+    return point["scene"]["datetime"][:10]
+
+
 def report_html(session: SessionData) -> str:
     cur_year = scene_year(session)
     parts: list[str] = []
@@ -184,7 +204,7 @@ def report_html(session: SessionData) -> str:
     parts.append(f"""
 <h1>Reporte de cobertura terrestre</h1>
 <p class="meta">Generado {datetime.now().strftime('%Y-%m-%d %H:%M')} · Sentinel-2 L2A (Planetary Computer) ·
-Random Forest con pseudo-etiquetado</p>
+Random Forest con pseudo-etiquetado · {_method_note(session)}</p>
 <table class="kv">
 <tr><th>Zona (bbox EPSG:4326)</th><td>[{bbox}]</td></tr>
 <tr><th>Escena actual</th><td>{html.escape(session.scene_id)}</td></tr>
@@ -219,7 +239,7 @@ Kappa: <b>{_fmt(m.get('kappa'), 3)}</b> · {m['n_train']} muestras de entrenamie
         trows = "".join(_trend_row(label, series["trends"].get(k)) for k, label in cls)
         heads = "".join(f"<th>{html.escape(label)}</th>" for _, label in cls)
         prow = "".join(
-            f"<tr><td>{p['year']}</td><td>{p['scene']['datetime'][:10]}</td><td>{p['clear_percent']:.0f} %</td>"
+            f"<tr><td>{p['year']}</td><td>{_when(p)}</td><td>{p['clear_percent']:.0f} %</td>"
             + "".join(f"<td>{_fmt(p['stats'][k]['percent_clear'], 1, ' %')}</td>" for k, _ in cls)
             + f"<td>{_fmt(p['ndvi_mean'], 3)}</td></tr>"
             for p in series["points"]
@@ -227,12 +247,12 @@ Kappa: <b>{_fmt(m.get('kappa'), 3)}</b> · {m['n_train']} muestras de entrenamie
         parts.append(f"""
 <h2>Evolución temporal</h2>
 {_img(_series_chart(series), 'Serie temporal')}
-<table><tr><th>Año</th><th>Fecha escena</th><th>Despejado</th>{heads}<th>NDVI medio</th></tr>{prow}</table>
+<table><tr><th>Año</th><th>Escenas</th><th>Despejado</th>{heads}<th>NDVI medio</th></tr>{prow}</table>
 <h3>Tendencias (Theil-Sen + Mann-Kendall)</h3>
 <table><tr><th>Clase</th><th>Pendiente</th><th>Equivalente (IC 95 %)</th><th>τ de Kendall</th><th>p-valor</th><th>¿Significativa?</th></tr>{trows}</table>
 <p class="note">Pendiente de Theil-Sen (mediana de pendientes entre pares de años) y prueba de Mann-Kendall
 (α = 0.05). Porcentajes sobre el área sin nubes; las tendencias usan solo años con ≥ 50 % de la zona despejada
-({', '.join(map(str, series['years_used_for_trend']))}).</p>""")
+({', '.join(map(str, series['years_used_for_trend']))}). {_method_note(session)}.</p>""")
 
         for year in sorted(session.comparisons, reverse=True):
             s = build_summary(session, year)
@@ -290,10 +310,18 @@ def _es(x: float, digits: int = 1, signed: bool = False) -> str:
     return txt.replace(",", " ").replace(".", ",")
 
 
-def _credit(years: list[int]) -> str:
+def _credit(years: list[int], scenes_per_year: int = 1) -> str:
     ys_sorted = sorted(set(years))
     ys = ", ".join(str(y) for y in ys_sorted) if len(ys_sorted) <= 3 else f"{ys_sorted[0]}–{ys_sorted[-1]}"
-    return f"Contiene datos modificados de Copernicus Sentinel-2 ({ys}). Clasificación: Random Forest con pseudo-etiquetado."
+    method = (f" Compuesto anual: voto de hasta {scenes_per_year} escenas por año." if scenes_per_year > 1 else "")
+    return (f"Contiene datos modificados de Copernicus Sentinel-2 ({ys}). "
+            f"Clasificación: Random Forest con pseudo-etiquetado.{method}")
+
+
+def _entry_when(entry: dict) -> str:
+    if entry.get("n_scenes", 1) > 1:
+        return f"compuesto de {entry['n_scenes']} escenas"
+    return entry["scene"]["datetime"][:10]
 
 
 def _scale_bar(ax, width_px: int, pixel_m: float) -> None:
@@ -313,17 +341,18 @@ def _scale_bar(ax, width_px: int, pixel_m: float) -> None:
 def render_before_after(session: SessionData, year: int, kind: str = "rgb", title: str = "") -> bytes:
     """Antes/después lado a lado, mismo contraste, con fechas, escala y crédito."""
     comp = session.comparisons[year]
+    cur = current_entry(session)
     cur_year = scene_year(session)
     p_lo, p_hi = _rgb_stretch(session)
     if kind == "class":
         n = len(scheme(session.class_scheme))
-        panels = [_class_map_to_index(comp["class_map"], n), _class_map_to_index(session.class_map, n)]
+        panels = [_class_map_to_index(comp["class_map"], n), _class_map_to_index(cur["class_map"], n)]
         imshow_kw = {"cmap": ListedColormap(class_palette(session.class_scheme)), "vmin": 0, "vmax": n,
                      "interpolation": "nearest"}
     else:
-        panels = [_rgb(comp["rgb"], p_lo, p_hi), _rgb(session.bands, p_lo, p_hi)]
+        panels = [_rgb(comp["rgb"], p_lo, p_hi), _rgb(cur["rgb"], p_lo, p_hi)]
         imshow_kw = {}
-    dates = [comp["scene"]["datetime"][:10], session.scene_datetime[:10]]
+    dates = [_entry_when(comp), _entry_when(cur)]
 
     h, w = session.class_map.shape
     fig_w = 14
@@ -337,7 +366,8 @@ def render_before_after(session: SessionData, year: int, kind: str = "rgb", titl
         _scale_bar(ax, w, pixel_area_m2(session) ** 0.5)
     if title:
         fig.suptitle(title, x=0.012, ha="left", fontsize=15, color=_INK, y=0.995)
-    fig.text(0.012, 0.012, _credit([year, cur_year]), fontsize=9, color=_MUTED, ha="left", va="bottom")
+    fig.text(0.012, 0.012, _credit([year, cur_year], session.scenes_per_year), fontsize=9, color=_MUTED,
+             ha="left", va="bottom")
     fig.tight_layout(rect=(0, 0.04, 1, 0.97 if title else 1))
     buf = io.BytesIO()
     fig.savefig(buf, format="png", facecolor=_PAPER)
@@ -397,10 +427,99 @@ def render_trend_chart(session: SessionData, title: str = "") -> bytes:
     ax.legend(frameon=False, loc="lower left", fontsize=10)
     if title:
         fig.suptitle(title, x=0.012, ha="left", fontsize=15, color=_INK)
-    fig.text(0.012, 0.012, _credit(years) + " Superficie estimada sobre el área sin nubes.",
+    fig.text(0.012, 0.012, _credit(years, session.scenes_per_year) + " Superficie estimada sobre el área sin nubes.",
              fontsize=8.5, color=_MUTED, ha="left", va="bottom")
     fig.tight_layout(rect=(0, 0.05, 1, 0.95 if title else 1))
     buf = io.BytesIO()
     fig.savefig(buf, format="png", facecolor=_PAPER)
     plt.close(fig)
+    return buf.getvalue()
+
+
+def render_timelapse(session: SessionData, kind: str = "rgb", title: str = "", frame_ms: int = 900) -> bytes:
+    """GIF año por año: imagen (o clasificación), año, cifra de la clase principal y crédito.
+
+    Todos los cuadros comparten contraste y encuadre; el último se sostiene el triple.
+    Los años que no entran en la tendencia (menos del 50 % clasificado) se muestran
+    con esa advertencia en lugar de una cifra.
+    """
+    from PIL import Image
+
+    series = build_series(session)
+    pts = series["points"]
+    years = [p["year"] for p in pts]
+    used = set(series["years_used_for_trend"])
+    main = primary(session.class_scheme)
+    n = len(scheme(session.class_scheme))
+    p_lo, p_hi = _rgb_stretch(session)
+    h, w = session.class_map.shape
+
+    fig_w, pad, head, foot = 7.2, 0.16, 0.86, 1.16
+    img_h = (fig_w - 2 * pad) * h / w
+    fig_h = img_h + head + foot
+    fig = plt.figure(figsize=(fig_w, fig_h), dpi=100, facecolor=_PAPER)
+    ax = fig.add_axes([pad / fig_w, foot / fig_h, 1 - 2 * pad / fig_w, img_h / fig_h])
+    ax.axis("off")
+    left, right = pad / fig_w, 1 - pad / fig_w
+    fig.text(left, 1 - 0.30 / fig_h, title or "Cobertura terrestre", fontsize=14, color=_INK, ha="left", va="center")
+    t_when = fig.text(left, 1 - 0.60 / fig_h, "", fontsize=9.5, color=_MUTED, ha="left", va="center")
+    t_year = fig.text(right, 1 - 0.42 / fig_h, "", fontsize=30, fontweight="bold", color=_INK,
+                      ha="right", va="center", family="monospace")
+    t_fig = fig.text(left, (foot - 0.24) / fig_h, "", fontsize=11.5, color=_INK, ha="left", va="center")
+    # Tira de años: el actual en tinta, los demás en lápiz
+    span = right - left
+    ticks = [
+        fig.text(left + span * (i + 0.5) / len(years), (foot - 0.54) / fig_h, str(y), fontsize=8.5,
+                 color=_MUTED, ha="center", va="center", family="monospace")
+        for i, y in enumerate(years)
+    ]
+    # El crédito va en dos líneas: completo también en pantallas angostas
+    credit = _credit(years, session.scenes_per_year).replace(". Clasificación", ".\nClasificación")
+    fig.text(left, 0.22 / fig_h, credit, fontsize=7, color=_MUTED, ha="left", va="center", linespacing=1.5)
+    if kind == "class":
+        handles = [plt.Line2D([], [], marker="s", linestyle="", markersize=7, color=c.color, label=c.label)
+                   for c in scheme(session.class_scheme)]
+        ax.legend(handles=handles, loc="lower right", fontsize=7.5, framealpha=0.9, edgecolor=_MUTED)
+
+    frames = []
+    image = None
+    for i, p in enumerate(pts):
+        entry = year_entry(session, p["year"])
+        if kind == "class":
+            data = _class_map_to_index(entry["class_map"], n)
+            if image is None:
+                image = ax.imshow(data, cmap=ListedColormap(class_palette(session.class_scheme)), vmin=0, vmax=n,
+                                  interpolation="nearest")
+            else:
+                image.set_data(data)
+        else:
+            data = _rgb(entry["rgb"], p_lo, p_hi)
+            if image is None:
+                image = ax.imshow(data)
+                _scale_bar(ax, w, pixel_area_m2(session) ** 0.5)
+            else:
+                image.set_data(data)
+        t_year.set_text(str(p["year"]))
+        t_when.set_text(_entry_when(entry).capitalize() if entry.get("n_scenes", 1) > 1
+                        else f"Escena del {_entry_when(entry)}")
+        st = p["stats"][main.key]
+        if p["year"] in used and st["percent_clear"] is not None:
+            ha = st["percent_clear"] / 100 * series["total_hectares"]
+            t_fig.set_text(f"{main.label}: {_es(ha, 0)} ha  ·  {_es(st['percent_clear'], 1)} % del área clasificada")
+            t_fig.set_color(_INK)
+        else:
+            t_fig.set_text("Menos de la mitad de la zona clasificada: año no comparable")
+            t_fig.set_color(_MUTED)
+        for j, tick in enumerate(ticks):
+            tick.set_color(_INK if j == i else _MUTED)
+            tick.set_fontweight("bold" if j == i else "normal")
+        fig.canvas.draw()
+        rgba = np.asarray(fig.canvas.buffer_rgba())
+        # Sin tramado: el GIF pesa bastante menos y la imagen satelital no lo necesita
+        frames.append(Image.fromarray(rgba[..., :3].copy()).quantize(colors=256, dither=Image.Dither.NONE))
+    plt.close(fig)
+
+    buf = io.BytesIO()
+    frames[0].save(buf, format="GIF", save_all=True, append_images=frames[1:], loop=0,
+                   duration=[frame_ms] * (len(frames) - 1) + [frame_ms * 3], disposal=1)
     return buf.getvalue()
