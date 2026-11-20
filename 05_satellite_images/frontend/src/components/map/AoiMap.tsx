@@ -198,7 +198,7 @@ export default function AoiMap({ bbox, onChange, focus, heightClass = 'h-[420px]
                 handleSearch();
               }
             }}
-            placeholder="Buscar lugar (prioriza Colombia)…"
+            placeholder="Buscar un lugar…"
             className="field flex-1 min-w-0"
           />
           <button type="button" onClick={handleSearch} className="btn btn-secondary px-3" aria-label="Buscar lugar">
@@ -217,7 +217,7 @@ export default function AoiMap({ bbox, onChange, focus, heightClass = 'h-[420px]
           </button>
           <button type="button" onClick={showRegion} title="Ver todo el país" className="btn btn-secondary px-3">
             <Maximize2 className="w-4 h-4" />
-            <span className="hidden xl:inline">Colombia</span>
+            <span className="hidden 2xl:inline">Colombia</span>
           </button>
           <button
             type="button"
@@ -227,11 +227,11 @@ export default function AoiMap({ bbox, onChange, focus, heightClass = 'h-[420px]
             className={`btn px-3 ${grid ? 'btn-primary' : 'btn-secondary'}`}
           >
             <Grid3x3 className="w-4 h-4" />
-            <span className="hidden xl:inline">Retícula</span>
+            <span className="hidden 2xl:inline">Retícula</span>
           </button>
           <button type="button" onClick={useView} title="Usar la vista actual como zona" className="btn btn-secondary px-3">
             <Crosshair className="w-4 h-4" />
-            <span className="hidden xl:inline">Usar vista</span>
+            <span className="hidden 2xl:inline">Usar vista</span>
           </button>
         </div>
       </div>

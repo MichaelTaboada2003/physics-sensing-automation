@@ -74,14 +74,19 @@ export default function MapPanel({ sessionId, zone, sceneInfo, onReset, onCompar
             onGraticule={setGrid}
           />
           <MapLegend kind={layerKind} classDefs={stats?.class_defs} />
+          {layerKind === 'class' && (stats?.n_scenes ?? 1) > 1 && (
+            <p className="text-sm text-ink-2">
+              Clasificación del año: voto de <span className="figure">{stats!.n_scenes}</span> escenas, la misma que entra en la serie.
+            </p>
+          )}
         </div>
         {bounds ? (
           <SwipeMap
             bounds={bounds}
-            after={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=${layerKind}`, label: 'Actual' }}
+            after={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=${layerKind}&m=${stats?.n_scenes ?? 1}`, label: 'Actual' }}
             opacity={opacity}
             graticule={grid}
-            height="h-[440px] lg:h-[600px]"
+            height="h-[440px] lg:h-[min(68dvh,680px)]"
           >
             {zone && (
               <div className="hidden sm:block">
@@ -91,6 +96,7 @@ export default function MapPanel({ sessionId, zone, sceneInfo, onReset, onCompar
                   cloudFraction={stats?.cloud_fraction}
                   classes={stats?.classes}
                   classDefs={stats?.class_defs}
+                  nScenes={stats?.n_scenes}
                 />
               </div>
             )}
@@ -106,7 +112,7 @@ export default function MapPanel({ sessionId, zone, sceneInfo, onReset, onCompar
       {zone && (
         <div className="sm:hidden">
           <SpecimenLabel zone={zone} scene={sceneInfo} cloudFraction={stats?.cloud_fraction} classes={stats?.classes}
-                  classDefs={stats?.class_defs} />
+                  classDefs={stats?.class_defs} nScenes={stats?.n_scenes} />
         </div>
       )}
 

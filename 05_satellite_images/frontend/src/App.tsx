@@ -9,6 +9,7 @@ import MapPanel from './components/MapPanel';
 import ComparePanel from './components/ComparePanel';
 import HeatPanel from './components/HeatPanel';
 import SpecimenLabel from './components/SpecimenLabel';
+import { StampInk } from './components/Stamp';
 import { useMapStats } from './hooks/useMapStats';
 import GuidedFlow from './components/GuidedFlow';
 import { initialGuidedRun } from './lib/guided';
@@ -83,7 +84,7 @@ const STEPS: { id: AppStep; label: string; title: string; purpose: string }[] = 
   },
   {
     id: 6, label: 'Comparar', title: 'Comparativa temporal',
-    purpose: 'La misma zona hasta 10 años atrás, con tendencias y su significancia.',
+    purpose: 'La misma zona hasta 10 años atrás: compuestos anuales, línea de tiempo y tendencias con su significancia.',
   },
   {
     id: 7, label: 'Calor', title: 'Temperatura de la superficie',
@@ -98,11 +99,11 @@ const GUIDED_STAGES: { id: GuidedStage; label: string; title: string; purpose: s
   },
   {
     id: 'running', label: 'Análisis', title: 'Analizando la zona',
-    purpose: 'Descargamos imágenes de satélite, aprendemos a reconocer la cobertura, la comparamos año por año y medimos su temperatura.',
+    purpose: 'Descargamos imágenes de satélite, aprendemos a reconocer la cobertura, la medimos año por año con varias imágenes y tomamos su temperatura.',
   },
   {
     id: 'results', label: 'Resultados', title: 'Resultados',
-    purpose: 'Lo mismo que el modo experto, con los parámetros elegidos automáticamente: tendencia, mapas, comparaciones, calor y cómo se hizo.',
+    purpose: 'Diez años de imágenes Sentinel-2 medidos con el mismo método. Lo mismo que el modo experto, con los parámetros elegidos automáticamente.',
   },
 ];
 
@@ -153,20 +154,28 @@ function App() {
   };
 
   const guided = mode === 'guided';
-  const current = guided ? GUIDED_STAGES.find(g => g.id === guidedStage)! : STEPS[state.step - 1];
+  const stage = guided ? GUIDED_STAGES.find(g => g.id === guidedStage)! : STEPS[state.step - 1];
+  // En los resultados guiados el título es la pregunta respondida para ese lugar
+  const current = guided && guidedStage === 'results' && state.zone && state.zone.name !== 'Zona personalizada'
+    ? { ...stage, title: `Qué cambió en ${state.zone.name.split(',')[0]}` }
+    : stage;
   // La etiqueta se actualiza al cambiar de paso (nubes tras la descarga, clases tras clasificar)
-  const stats = useMapStats(state.sessionId, `${state.step}-${state.mapReady}-${bandsTick}`);
+  const stats = useMapStats(state.sessionId, `${state.step}-${state.mapReady}-${bandsTick}-${guidedStage}`);
   const showSideLabel = !guided && state.zone && state.step >= 2 && state.step <= 4;
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[248px_1fr]">
+      <StampInk />
       {/* ── Riel: carpeta de género ── */}
-      <aside className="bg-folder text-folder-ink lg:sticky lg:top-0 lg:h-dvh flex flex-col">
+      <aside className="folder text-folder-ink lg:sticky lg:top-0 lg:h-dvh flex flex-col">
         {/* Móvil: una sola fila con el nombre y el modo; escritorio: bloque completo */}
         <div className="flex items-center justify-between gap-3 px-4 pt-3 pb-2 lg:block lg:px-0 lg:pt-0 lg:pb-0">
-          <div className="lg:px-5 lg:pt-7 lg:pb-6">
-            <p className="font-serif text-lg lg:text-xl font-semibold leading-tight">Imágenes Satelitales</p>
-            <p className="hidden lg:block text-sm text-folder-muted mt-0.5">Cobertura terrestre</p>
+          {/* Rótulo de la carpeta: papel pegado sobre el lino */}
+          <div className="folder-label lg:mx-3 lg:mt-4 lg:mb-5 lg:px-3.5 lg:pt-3 lg:pb-3">
+            <p className="font-serif text-lg lg:text-[1.3125rem] font-semibold leading-[1.15]">Imágenes Satelitales</p>
+            <p className="hidden lg:block text-[0.8125rem] text-ink-2 mt-1 pt-1 border-t border-rule">
+              Cobertura terrestre · <span className="font-serif italic">Colombia</span>
+            </p>
           </div>
           <div className="lg:px-3 lg:pb-5 shrink-0">
             <div className="flex lg:w-full p-[3px] rounded-[5px] bg-folder-2" role="group" aria-label="Modo">
@@ -198,7 +207,7 @@ function App() {
                     <span
                       aria-current={active ? 'step' : undefined}
                       className={`flex items-center gap-2 lg:gap-3 rounded-[5px] px-2 lg:px-2.5 py-1.5 lg:py-2 ${
-                        active ? 'bg-paper text-ink' : done ? 'text-folder-ink' : 'text-folder-muted/70'
+                        active ? 'bg-ground bg-[image:var(--tex-board)] text-ink lg:-mr-3 lg:rounded-r-none' : done ? 'text-folder-ink' : 'text-folder-muted/70'
                       }`}
                     >
                       <span
@@ -231,7 +240,7 @@ function App() {
                     aria-current={active ? 'step' : undefined}
                     className={`w-full flex items-center gap-2 lg:gap-3 rounded-[5px] px-2 lg:px-2.5 py-1.5 lg:py-2 text-left transition-colors ${
                       active
-                        ? 'bg-paper text-ink'
+                        ? 'bg-ground bg-[image:var(--tex-board)] text-ink lg:-mr-3 lg:rounded-r-none'
                         : accessible
                         ? 'hover:bg-folder-2 text-folder-ink'
                         : 'text-folder-muted/60 cursor-not-allowed'
@@ -259,16 +268,27 @@ function App() {
         </nav>
         )}
 
-        {!guided && state.sceneInfo && (
-          <div className="hidden lg:block mx-3 mb-4 p-3 rounded-[5px] border border-folder-2 text-sm">
-            <p className="text-folder-muted">Escena</p>
-            <p className="figure text-folder-ink mt-0.5">{state.sceneInfo.datetime.slice(0, 10)}</p>
-            <button
-              onClick={handleReset}
-              className="mt-3 inline-flex items-center gap-1.5 text-folder-ink/90 hover:text-white font-semibold"
-            >
-              <RotateCcw className="w-3.5 h-3.5" /> Nuevo análisis
-            </button>
+        {state.sceneInfo && state.zone && (
+          <div className="hidden lg:block mx-3 mb-4 p-3 rounded-[5px] border border-folder-2 bg-black/10 text-sm">
+            <p className="font-serif italic text-base leading-snug text-folder-ink">{state.zone.name}</p>
+            <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+              <dt className="text-folder-muted">Escena</dt>
+              <dd className="figure text-right">{state.sceneInfo.datetime.slice(0, 10)}</dd>
+              {stats?.n_scenes !== undefined && stats.n_scenes > 1 && (
+                <>
+                  <dt className="text-folder-muted">Compuesto</dt>
+                  <dd className="figure text-right">{stats.n_scenes} escenas</dd>
+                </>
+              )}
+            </dl>
+            {!guided && (
+              <button
+                onClick={handleReset}
+                className="mt-3 inline-flex items-center gap-1.5 text-folder-ink/90 hover:text-white font-semibold"
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Nuevo análisis
+              </button>
+            )}
           </div>
         )}
       </aside>
@@ -276,8 +296,8 @@ function App() {
       {/* ── Área de trabajo ── */}
       <main className="min-w-0 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
         <header className="mb-6 lg:mb-8 max-w-6xl">
-          <h1 className="font-serif text-[1.75rem] sm:text-[2rem] font-semibold leading-tight">{current.title}</h1>
-          <p className="text-ink-2 mt-1.5 max-w-[65ch]">{current.purpose}</p>
+          <h1 className="display">{current.title}</h1>
+          <p className="text-ink-2 text-[1.0625rem] mt-2 max-w-[65ch]">{current.purpose}</p>
         </header>
 
         <div
@@ -319,6 +339,8 @@ function App() {
                 scene={state.sceneInfo}
                 cloudFraction={stats?.cloud_fraction}
                 classes={stats?.classes}
+                classDefs={stats?.class_defs}
+                nScenes={stats?.n_scenes}
               />
             </div>
           )}

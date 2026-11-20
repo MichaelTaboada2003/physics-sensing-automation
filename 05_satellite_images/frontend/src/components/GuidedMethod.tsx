@@ -44,7 +44,9 @@ export default function GuidedMethod({ sessionId, sceneInfo, onOpenExpert }: Gui
             ['Imagen', sceneInfo ? sceneInfo.datetime.slice(0, 10) : '—', 'Sentinel-2 L2A, la más despejada del último año'],
             ['Nubes en la zona', stats?.cloud_fraction != null ? pct(stats.cloud_fraction * 100) : '—', 'Píxeles enmascarados con la capa SCL'],
             ['Ejemplos del modelo', worldcover ? 'ESA WorldCover 2021' : 'Reglas del curso', worldcover ? '5 clases, incluido urbano' : '3 clases por umbrales'],
-            ['Comparación', '10 años, misma temporada', '±60 días alrededor de la fecha de la imagen'],
+            (stats?.scenes_per_year ?? 1) > 1
+              ? ['Comparación', `10 años, ${stats!.scenes_per_year} escenas por año`, 'Compuesto anual: cada píxel toma la clase más votada']
+              : ['Comparación', '10 años, misma temporada', '±60 días alrededor de la fecha de la imagen'],
           ].map(([label, value, hint]) => (
             <div key={label} className="px-4 py-3">
               <dt className="text-ink-2">{label}</dt>
@@ -80,6 +82,10 @@ export default function GuidedMethod({ sessionId, sceneInfo, onOpenExpert }: Gui
             Un Random Forest aprende la firma de cada cobertura con{' '}
             {worldcover ? 'ejemplos del mapa ESA WorldCover 2021' : 'ejemplos etiquetados por umbrales espectrales'} y luego clasifica
             cada píxel de 10 × 10 m de esta imagen y de los años anteriores. Se valida con un 25 % de ejemplos que el modelo no vio.
+            {(stats?.scenes_per_year ?? 1) > 1 && (
+              <> Para cada año clasifica por separado hasta {stats!.scenes_per_year} imágenes y promedia sus probabilidades: así una nube
+              que la máscara no vio, una creciente o una quema puntual no cambian la clase del año.</>
+            )}
           </p>
         </div>
         {metrics ? <ClassifierMetrics metrics={metrics} /> : <p className="text-sm text-muted">Cargando métricas…</p>}

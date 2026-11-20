@@ -20,10 +20,12 @@ import {
   ArrowRight,
   Image as ImageIcon,
 } from 'lucide-react';
-import type { StreamLine, TimeSeries, Trend } from '../types';
+import type { ScenesPerYear, StreamLine, TimeSeries, Trend } from '../types';
 import { useProgressStream } from '../hooks/useProgressStream';
 import { RULES_DEFS, chartColor, phrase } from '../lib/classes';
+import { applyYearEvent, emptyYearProgress } from '../lib/yearProgress';
 import TaskProgress from './TaskProgress';
+import YearMatrix from './YearMatrix';
 
 const API_BASE = '';
 
@@ -46,6 +48,10 @@ interface TimeSeriesPanelProps {
   series: TimeSeries | null;
   onSeries: (s: TimeSeries) => void;
   onSelectYear: (year: number) => void;
+  /** Escenas por año con que se mide la serie (1 = una escena de la misma temporada). */
+  scenesPerYear: ScenesPerYear;
+  /** Se llama al lanzar el cálculo (el panel padre descarta lo medido con otro método). */
+  onStart?: () => void;
 }
 
 const fmt = (v: number | null | undefined, d = 1) =>
@@ -71,11 +77,14 @@ function Verdict({ trend }: { trend: Trend }) {
   );
 }
 
-export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series, onSeries, onSelectYear }: TimeSeriesPanelProps) {
+export default function TimeSeriesPanel({
+  sessionId, sceneYear, zoneName, series, onSeries, onSelectYear, scenesPerYear, onStart,
+}: TimeSeriesPanelProps) {
   const [status, setStatus] = useState<Status>(series ? 'done' : 'idle');
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<StreamLine[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [years, setYears] = useState(() => emptyYearProgress(scenesPerYear));
   const { consume } = useProgressStream();
 
   const append = useCallback((l: StreamLine) => setLogs(prev => [...prev, l]), []);
@@ -85,11 +94,13 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
     setProgress(0);
     setLogs([]);
     setErrorMsg(null);
+    setYears(emptyYearProgress(scenesPerYear));
+    onStart?.();
     await consume(
       `${API_BASE}/timeseries`,
       'POST',
-      JSON.stringify({ session_id: sessionId, years_back: 10 }),
-      l => { append(l); setProgress(l.progress); },
+      JSON.stringify({ session_id: sessionId, years_back: 10, scenes_per_year: scenesPerYear }),
+      l => { append(l); setProgress(l.progress); setYears(y => applyYearEvent(y, l.event)); },
       l => {
         setStatus('done');
         if (l.series) onSeries(l.series);
@@ -122,13 +133,18 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
             Serie <span className="figure">{sceneYear - 10}–{sceneYear}</span>
           </h2>
           <p className="text-sm text-ink-2 mt-1">
-            Procesa los 10 años anteriores en paralelo (misma temporada, la escena más despejada de cada año)
-            y estima la tendencia con Theil-Sen y su significancia con Mann-Kendall. Tarda cerca de un minuto.
+            {scenesPerYear > 1
+              ? <>Mide cada año con hasta <span className="figure">{scenesPerYear}</span> escenas (voto por píxel), también el actual,</>
+              : 'Procesa los 10 años anteriores en paralelo (misma temporada, la escena más despejada de cada año)'}{' '}
+            y estima la tendencia con Theil-Sen y su significancia con Mann-Kendall.{' '}
+            {scenesPerYear > 1
+              ? <>Tarda entre <span className="figure">{Math.round((11 * scenesPerYear * 3.6) / 60)}</span> y <span className="figure">{Math.round((11 * scenesPerYear * 5.5) / 60)}</span> minutos, según la red.</>
+              : 'Tarda cerca de un minuto.'}
           </p>
         </div>
         <button onClick={run} disabled={status === 'running'} className="btn btn-primary">
           {status === 'running' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-          {series ? 'Recalcular serie' : 'Calcular la serie'}
+          {series ? (series.scenes_per_year ?? 1) !== scenesPerYear ? 'Medir de nuevo con este método' : 'Recalcular serie' : 'Calcular la serie'}
         </button>
       </section>
 
@@ -140,6 +156,9 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
           error={errorMsg}
           titles={{ running: 'Descargando y clasificando años anteriores…', done: 'Serie lista', error: 'No se pudo calcular la serie' }}
         />
+      )}
+      {status === 'running' && (
+        <YearMatrix progress={years} mainLabel={(series?.classes ?? RULES_DEFS)[0].label.toLowerCase()} className="max-w-xl" />
       )}
 
       {series && status !== 'running' && (
@@ -158,7 +177,7 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
           )}
 
           <a
-            href={`${API_BASE}/export/trend.png?session_id=${sessionId}&title=${encodeURIComponent(`Vegetación en ${zoneName}`)}`}
+            href={`${API_BASE}/export/trend.png?session_id=${sessionId}&title=${encodeURIComponent(`${main.label} en ${zoneName}`)}`}
             download
             className="btn btn-primary"
           >
@@ -277,7 +296,7 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
               <thead>
                 <tr>
                   <th scope="col">Año</th>
-                  <th scope="col">Escena</th>
+                  <th scope="col">{(series.scenes_per_year ?? 1) > 1 ? 'Escenas' : 'Escena'}</th>
                   <th scope="col" className="!text-right">Clasificado</th>
                   {defs.map(d => (
                     <th key={d.key} scope="col" className="!text-right">{d.label}</th>
@@ -292,7 +311,9 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
                   return (
                     <tr key={p.year}>
                       <td className="figure font-bold">{p.year}</td>
-                      <td className="figure text-ink-2">{p.scene.datetime.slice(0, 10)}</td>
+                      <td className="figure text-ink-2" title={(p.scene_dates ?? []).join(' · ') || undefined}>
+                        {(p.n_scenes ?? 1) > 1 ? `${p.n_scenes} escenas` : p.scene.datetime.slice(0, 10)}
+                      </td>
                       <td className={`num ${lowClear ? 'text-soil font-bold' : ''}`} title={lowClear ? 'Menos del 50 % clasificado: excluido de la tendencia' : undefined}>
                         {fmt(p.valid_percent, 0)} %
                       </td>
@@ -319,6 +340,9 @@ export default function TimeSeriesPanel({ sessionId, sceneYear, zoneName, series
                 </p>
               ))}
               <p className="text-muted">
+                {(series.scenes_per_year ?? 1) > 1 && (
+                  <>Cada año es el voto de hasta <span className="figure">{series.scenes_per_year}</span> escenas (pasa el cursor sobre «escenas» para ver las fechas). </>
+                )}
                 Tendencias con <span className="figure">{series.years_used_for_trend.length}</span> años (≥ 50 % de la zona clasificada; los demás no cuentan).
                 Superficie analizada: <span className="figure">{fmt(series.total_hectares, 0)}</span> ha.
               </p>

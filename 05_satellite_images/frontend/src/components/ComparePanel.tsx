@@ -1,12 +1,17 @@
 import { useState, useCallback, useEffect } from 'react';
-import type { LayerKind, TimeSeries } from '../types';
+import type { LayerKind, ScenesPerYear, TimeSeries } from '../types';
 import { useLayerBounds } from '../hooks/useLayerBounds';
 import SwipeMap from './map/SwipeMap';
+import TimelineMap from './map/TimelineMap';
+import type { FrameKind } from './map/TimelineMap';
 import LayerControls from './map/LayerControls';
 import TimeSeriesPanel from './TimeSeriesPanel';
-import { Play, Loader2, Download, FileText, CalendarRange, Image as ImageIcon, LineChart as LineChartIcon } from 'lucide-react';
+import TrendChart from './TrendChart';
+import {
+  Play, Loader2, Download, FileText, CalendarRange, Film, History, Image as ImageIcon, LineChart as LineChartIcon,
+} from 'lucide-react';
 import type { StreamLine, ComparisonSummary, ClassDef, Zone } from '../types';
-import { RULES_DEFS, phrase } from '../lib/classes';
+import { RULES_DEFS, chartColor, phrase } from '../lib/classes';
 import { useProgressStream } from '../hooks/useProgressStream';
 import { useMapStats } from '../hooks/useMapStats';
 import TaskProgress from './TaskProgress';
@@ -20,7 +25,12 @@ const API_BASE = '';
 const MAX_YEARS_BACK = 10;
 
 
-type Tab = 'year' | 'series';
+type Tab = 'year' | 'timeline' | 'series';
+
+const METHODS: { n: ScenesPerYear; label: string }[] = [
+  { n: 1, label: '1' }, { n: 3, label: '3' }, { n: 6, label: '6' }, { n: 10, label: '10' },
+];
+const asMethod = (n: number | undefined): ScenesPerYear | null => (n === 1 || n === 3 || n === 6 || n === 10 ? n : null);
 
 // Transiciones de interés, por clave de clase ('P' = clase principal: vegetación o bosque)
 const TRANSITION_PAIRS: [string, string][] = [
@@ -39,6 +49,8 @@ interface ComparePanelProps {
   initialSeries?: TimeSeries | null;
   /** Año ya procesado que se muestra al abrir. */
   initialYear?: number;
+  /** Modo guiado: el método (escenas por año) ya está elegido y no se cambia aquí. */
+  lockMethod?: boolean;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -50,7 +62,9 @@ const signed = (n: number, digits = 1) =>
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo, initialSeries = null, initialYear }: ComparePanelProps) {
+export default function ComparePanel({
+  sessionId, sceneYear, zone, sceneInfo, initialSeries = null, initialYear, lockMethod = false,
+}: ComparePanelProps) {
   const years = Array.from({ length: MAX_YEARS_BACK }, (_, i) => sceneYear - 1 - i);
 
   const [selectedYear, setSelectedYear] = useState<number>(initialYear ?? sceneYear - 5);
@@ -65,8 +79,18 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo, in
   const [layerKind, setLayerKind] = useState<LayerKind>('rgb');
   const [grid, setGrid] = useState(false);
   const [opacity, setOpacity] = useState(1);
+  // Escenas por año: el método con que se miden todos los años de la sesión
+  const [picked, setPicked] = useState<ScenesPerYear | null>(asMethod(initialSeries?.scenes_per_year));
+  const [frameKind, setFrameKind] = useState<FrameKind>('rgb');
+  const [frameYear, setFrameYear] = useState<number | null>(null);
   const { bounds } = useLayerBounds(sessionId);
-  const stats = useMapStats(sessionId, 'compare');
+  const stats = useMapStats(sessionId, `compare-${series?.points.length ?? 0}-${Object.keys(results).length}`);
+  // Lo ya medido en la sesión manda; sin nada medido, el compuesto de 6 escenas
+  const sessionMethod = asMethod(series?.scenes_per_year) ?? asMethod(stats?.scenes_per_year);
+  const hasWork = !!series || Object.keys(results).length > 0;
+  const method: ScenesPerYear = picked ?? (hasWork ? sessionMethod : null) ?? 6;
+  const measured = hasWork ? sessionMethod : null;
+  const changesMethod = measured !== null && measured !== method;
 
   const { consume } = useProgressStream();
 
@@ -108,6 +132,21 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo, in
     };
   }, [sessionId, initialYear]);
 
+  // Serie ya medida en la sesión (p. ej. por el modo guiado): se retoma sin recalcular
+  useEffect(() => {
+    if (initialSeries) return;
+    let alive = true;
+    fetch(`${API_BASE}/timeseries/summary?session_id=${sessionId}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then((s: TimeSeries | null) => {
+        if (alive && s && s.points.length >= 3) setSeries(prev => prev ?? s);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [sessionId, initialSeries]);
+
   const appendLog = useCallback((line: StreamLine) => {
     setLogs(prev => [...prev, line]);
   }, []);
@@ -118,11 +157,17 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo, in
     setProgress(0);
     setLogs([]);
     setErrorMsg(null);
+    if (changesMethod) {
+      // Otro método: lo medido antes ya no es comparable
+      setResults({});
+      setSeries(null);
+      setActiveYear(null);
+    }
 
     await consume(
       `${API_BASE}/compare`,
       'POST',
-      JSON.stringify({ session_id: sessionId, year }),
+      JSON.stringify({ session_id: sessionId, year, scenes_per_year: method }),
       (line) => {
         appendLog(line);
         setProgress(line.progress);
@@ -155,11 +200,19 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo, in
   // Fichas de determinación para la etiqueta: serie (si existe) + comparativas sueltas
   const slipsByYear = new Map<number, DeterminationSlip>();
   for (const [y, r] of Object.entries(results)) {
-    slipsByYear.set(Number(y), { year: Number(y), date: r.past_scene.datetime.slice(0, 10), values: valuesOf(r.past) });
+    slipsByYear.set(Number(y), {
+      year: Number(y),
+      date: (r.past_n_scenes ?? 1) > 1 ? `${r.past_n_scenes} escenas` : r.past_scene.datetime.slice(0, 10),
+      values: valuesOf(r.past),
+    });
   }
   for (const p of series?.points ?? []) {
     if (p.year === sceneYear) continue;
-    slipsByYear.set(p.year, { year: p.year, date: p.scene.datetime.slice(0, 10), values: valuesOf(p.stats) });
+    slipsByYear.set(p.year, {
+      year: p.year,
+      date: (p.n_scenes ?? 1) > 1 ? `${p.n_scenes} escenas` : p.scene.datetime.slice(0, 10),
+      values: valuesOf(p.stats),
+    });
   }
   const slips = [...slipsByYear.values()];
   const currentPoint = series?.points.find(p => p.year === sceneYear);
@@ -172,6 +225,7 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo, in
     classDefs: defs,
     slips,
     vegetationTrend: series?.trends[main.key],
+    nScenes: stats?.n_scenes,
   };
   const label = labelProps && <SpecimenLabel {...labelProps} />;
   // Dentro del mapa caben menos fichas
@@ -190,13 +244,62 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo, in
       to: rowOf(b),
     }));
 
+  // Línea de tiempo: necesita la serie (al menos dos años anteriores)
+  const timelineReady = !!series && series.points.length >= 3;
+  const usedYears = new Set(series?.years_used_for_trend ?? []);
+  const chartPoints = (series?.points ?? []).map(p => ({
+    year: p.year,
+    ha: usedYears.has(p.year) && p.stats[main.key]?.percent_clear != null
+      ? Math.round((p.stats[main.key].percent_clear! / 100) * series!.total_hectares)
+      : null,
+  }));
+  const shownFrame = frameYear ?? sceneYear;
+
+  const methodNote = method > 1
+    ? <>Compuesto anual: las <span className="figure">{method}</span> escenas más despejadas de todo el año, clasificadas por separado; cada píxel toma la clase más votada.</>
+    : <>Una escena por año: la más despejada de la misma temporada (±60 días).</>;
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
+      {/* Método: cuántas escenas miden cada año */}
+      <section className="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="Método de comparación">
+        {lockMethod ? (
+          <p className="text-sm text-ink-2 max-w-[80ch]">{methodNote}</p>
+        ) : (
+          <>
+            <div className="flex items-center gap-2.5">
+              <span className="field-label" id="method-label">Escenas por año</span>
+              <div className="segmented" role="group" aria-labelledby="method-label">
+                {METHODS.map(o => (
+                  <button
+                    key={o.n}
+                    type="button"
+                    aria-pressed={method === o.n}
+                    onClick={() => setPicked(o.n)}
+                    disabled={status === 'running'}
+                    className="figure min-w-9"
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-sm text-ink-2 flex-1 min-w-[16rem] max-w-[72ch]">
+              {methodNote}
+              {changesMethod && (
+                <b className="text-ink"> Cambiar el método vuelve a medir los años ya calculados con <span className="figure">{measured}</span>.</b>
+              )}
+            </p>
+          </>
+        )}
+      </section>
+
       <div className="segmented" role="tablist" aria-label="Tipo de comparación">
         {([
           { id: 'year' as Tab, label: 'Comparar un año', icon: CalendarRange },
+          { id: 'timeline' as Tab, label: 'Línea de tiempo', icon: History },
           { id: 'series' as Tab, label: 'Serie de 10 años', icon: LineChartIcon },
         ]).map(t => (
           <button
@@ -220,13 +323,90 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo, in
               sceneYear={sceneYear}
               zoneName={zone?.name ?? ''}
               series={series}
-              onSeries={setSeries}
+              onSeries={s => { setSeries(s); setPicked(asMethod(s.scenes_per_year)); }}
               onSelectYear={showYear}
+              scenesPerYear={method}
+              onStart={() => {
+                if (changesMethod) {
+                  setResults({});
+                  setActiveYear(null);
+                }
+              }}
             />
           </div>
           {label && <div className="xl:sticky xl:top-8">{label}</div>}
         </div>
       )}
+
+      {tab === 'timeline' && (timelineReady && bounds ? (
+        <div className="space-y-6 animate-fade-in">
+          <section className="sheet overflow-hidden" aria-label="Línea de tiempo">
+            <div className="p-3 border-b border-rule bg-paper-2 space-y-2.5">
+              <LayerControls
+                kinds={['rgb', 'class', 'ndvi']}
+                kind={frameKind}
+                onKind={k => setFrameKind(k as FrameKind)}
+                opacity={opacity}
+                onOpacity={setOpacity}
+                graticule={grid}
+                onGraticule={setGrid}
+              />
+              <MapLegend kind={frameKind} classDefs={defs} />
+            </div>
+            <TimelineMap
+              sessionId={sessionId}
+              bounds={bounds}
+              series={series!}
+              main={main}
+              zoneName={zone?.name ?? ''}
+              year={shownFrame}
+              onYear={setFrameYear}
+              kind={frameKind}
+              opacity={opacity}
+              graticule={grid}
+              height="h-[440px] lg:h-[min(66dvh,660px)]"
+            />
+          </section>
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px] items-start">
+            <figure className="sheet p-4 sm:p-5 min-w-0">
+              <figcaption className="mb-2 pr-40">
+                <span className="block font-serif text-xl font-semibold">Hectáreas de {main.label.toLowerCase()} por año</span>
+                <span className="block text-sm text-ink-2 mt-0.5">El punto resaltado es el año visible en el mapa; toca otro para saltar a él.</span>
+              </figcaption>
+              <TrendChart
+                points={chartPoints}
+                trend={series!.trends[main.key]}
+                color={chartColor(main)}
+                label={main.label}
+                activeYear={shownFrame}
+                onYear={setFrameYear}
+                height={260}
+              />
+            </figure>
+            <div className="space-y-4">
+              {label}
+              <a
+                href={`${API_BASE}/export/timelapse.gif?session_id=${sessionId}&kind=${frameKind === 'class' ? 'class' : 'rgb'}&title=${encodeURIComponent(zone?.name ?? '')}`}
+                download
+                className="btn btn-secondary w-full"
+              >
+                <Film className="w-4 h-4" /> Descargar la animación (GIF)
+              </a>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <section className="sheet p-5 max-w-[70ch] space-y-3">
+          <h2 className="font-serif text-xl font-semibold">La línea de tiempo usa los años de la serie</h2>
+          <p className="text-ink-2">
+            Muestra la zona año por año sobre el mismo encuadre y contraste, con la cifra de {main.label.toLowerCase()} de cada año,
+            y se exporta como animación. Primero hay que medir los años anteriores.
+          </p>
+          <button type="button" onClick={() => setTab('series')} className="btn btn-primary">
+            <LineChartIcon className="w-4 h-4" /> Ir a calcular la serie
+          </button>
+        </section>
+      ))}
 
       {tab === 'year' && (
         <>
@@ -234,7 +414,9 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo, in
             <div>
               <h2 id="year-title" className="font-serif text-xl font-semibold">Año a comparar con {sceneYear}</h2>
               <p className="text-sm text-ink-2 mt-1">
-                Misma temporada (±60 días), la escena con menos nubes en la zona, clasificada con el mismo modelo.
+                {method > 1
+                  ? <>Los dos años se miden igual: voto de hasta <span className="figure">{method}</span> escenas de todo el año, con el mismo modelo.</>
+                  : 'Misma temporada (±60 días), la escena con menos nubes en la zona, clasificada con el mismo modelo.'}
               </p>
             </div>
             <div className="segmented flex-wrap" role="group" aria-label="Año">
@@ -314,21 +496,21 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo, in
                   layerKind === 'change' ? (
                     <SwipeMap
                       bounds={bounds}
-                      after={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=change&year=${active.year}`, label: 'Cambios' }}
+                      after={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=change&year=${active.year}&m=${method}`, label: 'Cambios' }}
                       opacity={opacity}
                       graticule={grid}
-                      height="h-[440px] lg:h-[600px]"
+                      height="h-[440px] lg:h-[min(66dvh,660px)]"
                     >
                       {mapLabel && <div className="hidden sm:block">{mapLabel}</div>}
                     </SwipeMap>
                   ) : (
                     <SwipeMap
                       bounds={bounds}
-                      before={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=${layerKind}&year=${active.year}`, label: String(active.year) }}
-                      after={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=${layerKind}`, label: String(sceneYear) }}
+                      before={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=${layerKind}&year=${active.year}&m=${method}`, label: String(active.year) }}
+                      after={{ url: `${API_BASE}/layer?session_id=${sessionId}&kind=${layerKind}&year=${sceneYear}&m=${method}`, label: String(sceneYear) }}
                       opacity={opacity}
                       graticule={grid}
-                      height="h-[440px] lg:h-[600px]"
+                      height="h-[440px] lg:h-[min(66dvh,660px)]"
                     >
                       {mapLabel && <div className="hidden sm:block">{mapLabel}</div>}
                     </SwipeMap>
@@ -416,8 +598,8 @@ export default function ComparePanel({ sessionId, sceneYear, zone, sceneInfo, in
               <details className="sheet">
                 <summary className="cursor-pointer px-4 py-3 font-semibold">Figura comparativa completa</summary>
                 <img
-                  key={`${sessionId}-${active.year}`}
-                  src={`${API_BASE}/compare/image?session_id=${sessionId}&year=${active.year}`}
+                  key={`${sessionId}-${active.year}-${method}`}
+                  src={`${API_BASE}/compare/image?session_id=${sessionId}&year=${active.year}&m=${method}`}
                   alt={`Color real, ΔNDVI, clasificación y mapa de cambios ${active.year}–${sceneYear}`}
                   loading="lazy"
                   className="w-full h-auto border-t border-rule bg-white"
