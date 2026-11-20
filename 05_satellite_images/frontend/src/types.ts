@@ -157,6 +157,10 @@ export interface ClassifierMetrics {
   kappa?: number;
   confusion_matrix?: number[][];
   per_class?: { class: string; precision: number; recall: number; f1: number; support: number }[];
+  /** Fechas (AAAA-MM-DD) de las escenas con que se entrenó; la primera es la de la sesión. */
+  training_dates?: string[];
+  /** Etiquetas de WorldCover descartadas por contradecir la imagen (río que migró, bosque talado…). */
+  labels_cleaned?: number;
 }
 
 /** Pendiente de Theil-Sen + prueba de Mann-Kendall. */

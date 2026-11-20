@@ -108,6 +108,20 @@ export default function ClassifierMetrics({ metrics }: { metrics: Metrics }) {
           ? 'La validación compara con WorldCover 2021, un mapa independiente pero no perfecto (≈ 76 % de exactitud) y de otro año: mide el acuerdo con ese mapa, no con datos de campo.'
           : 'La validación compara con las etiquetas de las reglas, no con datos de campo. Valores cercanos al 100 % significan que el modelo reproduce las reglas, no que el mapa sea perfecto.'}
       </p>
+      {metrics.method === 'worldcover' && (metrics.training_dates?.length ?? 0) > 0 && (
+        <p className="flex items-start gap-2 text-sm text-ink-2 max-w-[75ch]">
+          <Info className="w-4 h-4 shrink-0 mt-0.5 text-muted" />
+          <span>
+            Entrenado con {metrics.training_dates!.length === 1 ? 'la escena del ' : `${metrics.training_dates!.length} fechas: `}
+            <span className="figure">{metrics.training_dates!.join(', ')}</span>, para que el agua, la vegetación y el suelo
+            se reconozcan aunque cambien de un día a otro.
+            {(metrics.labels_cleaned ?? 0) > 0 && (
+              <> Se descartaron <span className="figure">{metrics.labels_cleaned!.toLocaleString('es-CO')}</span> etiquetas
+              de WorldCover que contradecían la imagen (un río que cambió de cauce, un bosque talado después de 2021).</>
+            )}
+          </span>
+        </p>
+      )}
     </div>
   );
 }

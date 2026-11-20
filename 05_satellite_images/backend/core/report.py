@@ -180,6 +180,25 @@ def _fmt(v, digits=1, suffix="") -> str:
     return "—" if v is None else f"{v:,.{digits}f}{suffix}"
 
 
+def _training_note(m: dict) -> str:
+    dates = m.get("training_dates") or []
+    if m.get("method") != "worldcover" or not dates:
+        return ""
+    when = f"la escena del {dates[0]}" if len(dates) == 1 else f"{len(dates)} fechas ({', '.join(dates)})"
+    cleaned = m.get("labels_cleaned") or 0
+    n = f"{cleaned:,}".replace(",", ".")
+    extra = (f" Se descartaron {n} etiquetas de WorldCover que contradecían la imagen "
+             "(agua evidente marcada como otra clase, «agua» sin firma de agua, «bosque» sin dosel).") if cleaned else ""
+    return f"<p>Entrenado con {when}.{extra}</p>"
+
+
+def _validation_note(m: dict) -> str:
+    if m.get("method") == "worldcover":
+        return ("La validación mide el acuerdo con WorldCover 2021 (≈ 76 % de exactitud global, ya depurado), "
+                "no con datos de campo.")
+    return "La validación mide el acuerdo con las pseudo-etiquetas generadas por umbrales, no con datos de campo."
+
+
 def _method_note(session: SessionData) -> str:
     """Cómo se midió cada año: una escena o un compuesto por voto."""
     n = session.scenes_per_year
@@ -231,7 +250,8 @@ Random Forest con pseudo-etiquetado · {_method_note(session)}</p>
 Kappa: <b>{_fmt(m.get('kappa'), 3)}</b> · {m['n_train']} muestras de entrenamiento, {m['n_test']} de validación.</p>
 <table><tr><th>Clase</th><th>Precisión</th><th>Recall</th><th>F1</th><th>Soporte</th></tr>{rows}</table>
 <p>Variables más importantes: {top}.</p>
-<p class="note">La validación mide el acuerdo con las pseudo-etiquetas generadas por umbrales, no con datos de campo.</p>""")
+{_training_note(m)}
+<p class="note">{_validation_note(m)}</p>""")
 
     if session.comparisons:
         series = build_series(session)
