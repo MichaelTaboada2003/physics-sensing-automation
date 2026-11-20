@@ -8,7 +8,9 @@ WorldCover es un mapa global de cobertura validado por la ESA (exactitud global
 aprende la firma espectral de cada clase en la escena actual y luego la aplica
 a la escena y a los años anteriores. Como el mapa es de 2021, los píxeles que
 cambiaron desde entonces quedan mal etiquetados; con decenas de miles de
-ejemplos ese ruido pesa poco, pero conviene recordarlo.
+ejemplos ese ruido pesa poco, salvo cuando es sistemático (un río que migró se
+etiqueta entero como pastos): por eso ``clean_labels`` descarta las etiquetas
+que contradicen la firma espectral de la escena antes de entrenar.
 """
 
 from __future__ import annotations
@@ -39,6 +41,44 @@ WC_TO_CLASS: dict[int, int] = {
     90: 4,   # humedal herbáceo
     # 70 (nieve) y 100 (musgos y líquenes) quedan fuera del entrenamiento
 }
+
+
+_FOREST, _WATER = 0, 1
+
+# Consistencia espectral de las etiquetas (clean_labels). WorldCover es de 2021 y
+# la escena no: un río que migró, un cauce minero nuevo o un bosque talado dejan
+# etiquetas que contradicen lo que el satélite ve hoy. Si el modelo aprende de
+# ellas, el agua turbia pasa a ser «pastos» y deja de reconocerse en otras fechas.
+WATER_LIKE_MNDWI = 0.3     # agua abierta evidente: MNDWI alto…
+WATER_LIKE_NDVI = 0.2      # …y sin vegetación
+WATER_LABEL_MNDWI_MIN = 0.0  # una etiqueta «agua» necesita al menos firma de agua
+WATER_LABEL_NDVI_MAX = 0.3
+FOREST_LABEL_NDVI_MIN = 0.4  # una etiqueta «bosque» necesita dosel verde
+
+
+def clean_labels(labels: np.ndarray, indices: dict) -> tuple[np.ndarray, int]:
+    """Descarta (-1) las etiquetas que contradicen la escena; devuelve (etiquetas, descartadas).
+
+    - Agua evidente (MNDWI > 0.3 y NDVI < 0.2) etiquetada como otra clase.
+    - «Agua» sin firma de agua (MNDWI ≤ 0 o NDVI ≥ 0.3): cauce abandonado o rellenado.
+    - «Bosque» sin dosel (NDVI < 0.4): talado desde 2021 o fecha seca.
+
+    Se descartan en vez de reetiquetarse: el modelo solo aprende de ejemplos en que
+    el mapa y la imagen coinciden. Los píxeles sin índices (nube) quedan igual.
+    """
+    mndwi, ndvi = indices["mndwi"], indices["ndvi"]
+    seen = np.isfinite(mndwi) & np.isfinite(ndvi)
+    with np.errstate(invalid="ignore"):
+        water_like = (mndwi > WATER_LIKE_MNDWI) & (ndvi < WATER_LIKE_NDVI)
+        bad = (
+            ((labels != _WATER) & water_like)
+            | ((labels == _WATER) & ~((mndwi > WATER_LABEL_MNDWI_MIN) & (ndvi < WATER_LABEL_NDVI_MAX)))
+            | ((labels == _FOREST) & (ndvi < FOREST_LABEL_NDVI_MIN))
+        )
+    bad &= seen & (labels >= 0)
+    out = labels.copy()
+    out[bad] = -1
+    return out, int(np.count_nonzero(bad))
 
 
 class WorldCoverError(RuntimeError):
