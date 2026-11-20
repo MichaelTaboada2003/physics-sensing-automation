@@ -30,9 +30,16 @@ colors:
 typography:
   display:
     fontFamily: "Source Serif 4 Variable, ui-serif, Georgia, serif"
-    fontSize: "1.75rem"
+    fontSize: "2.375rem"
     fontWeight: 600
-    lineHeight: 1.25
+    lineHeight: 1.12
+    letterSpacing: "-0.012em"
+  lede:
+    fontFamily: "Source Serif 4 Variable, ui-serif, Georgia, serif"
+    fontSize: "2rem"
+    fontWeight: 400
+    lineHeight: 1.24
+    letterSpacing: "-0.008em"
   headline:
     fontFamily: "Source Serif 4 Variable, ui-serif, Georgia, serif"
     fontSize: "1.25rem"
@@ -121,6 +128,17 @@ components:
     textColor: "{colors.ink}"
     rounded: "{rounded.control}"
     width: "300px"
+  stamp:
+    textColor: "{colors.ink-2}"
+    rounded: "{rounded.control}"
+    padding: "9px 16px 8px"
+  stamp-significant:
+    textColor: "{colors.signal}"
+  year-slip:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.control}"
+    padding: "6px 8px 8px"
 ---
 
 # Design System: Imágenes Satelitales · Cobertura terrestre Colombia
@@ -133,11 +151,14 @@ Every analysed zone is treated as a specimen of the Herbario Nacional Colombiano
 
 Density is that of an instrument, not a brochure: hairline-ruled sheets, tabular monospace figures, data tables, and the map as the dominant surface. Colour is spent on meaning. Violet is the hand of the archivist (action, selection, focus); the three class colours are the data; type-specimen red is the alarm. Everything else is paper, ink and rule.
 
-Motion is small and physical: blocks settle up 6px into place, and determination slips drop onto the label with a slight rotation as if laid by hand. All motion collapses under reduced-motion.
+Since the November 2026 pass the materials are present, not just named: the board carries a faint fibre, every sheet a paper grain, the rail is woven folder linen with a paper label glued on, and the trend verdict is a rubber stamp with uneven ink. All of it is inline SVG noise in iron-gall ink at very low opacity; nothing is a photograph and nothing costs a request.
+
+Motion is small and physical: blocks settle up 6px into place, and determination slips drop onto the label with a slight rotation as if laid by hand. One moment is choreographed: when the guided results arrive, the determination stamp drops, presses and stays. It happens once per analysis. All motion collapses under reduced-motion.
 
 **Key Characteristics:**
 - Light theme only: mounting-board ground, label-paper sheets, iron-gall ink.
-- Folder-green rail as the committed shell; violet stamp for every interactive selection.
+- Folder-green linen rail as the committed shell, with a paper label for the app name and the current step as a tab that opens onto the sheet; violet stamp for every interactive selection.
+- The verdict of a trend is a determination stamp; the timeline of years is a row of determination slips.
 - Three-voice type: humanist sans for UI, serif for titles and italic place names, typewriter mono for every figure.
 - Hairline 1px rules and small radii (2 to 6px); soft shadow only on floating objects.
 - Colour-blind-validated class and change palettes, always paired with a text label.
@@ -191,8 +212,9 @@ All three are self-hosted through @fontsource packages imported at the top of th
 **Character:** A legibility-first humanist sans does the work; a scholarly optical-size serif gives titles and place names the voice of a herbarium sheet; a typewriter mono makes every number look typed onto the label.
 
 ### Hierarchy
-- **Display** (serif 600, 1.75rem rising to 2rem from 640px, leading 1.25): the step title in the work-area header; the app name in the rail at 1.125 to 1.25rem.
-- **Headline** (serif 600, 1.25rem): section titles inside a step. The guided-mode findings sentence runs in serif 400 at 1.5 to 1.75rem, max 72ch.
+- **Display** (serif 600, 2rem, 2.375rem from 640px, 2.75rem from 1280px, leading 1.12, tracking -0.012em): the step title in the work-area header. In guided results it names the place ("Qué cambió en San José del Guaviare"). The app name on the folder label runs at 1.3125rem.
+- **Lede** (serif 400, 1.625rem, 2rem from 640px, 2.375rem from 1280px, leading 1.2 to 1.24, max 46rem): the guided-mode finding, the sentence a journalist can quote. Its figures are mono at 0.86em; only a significant loss turns red.
+- **Headline** (serif 600, 1.25rem): section titles inside a step and chart titles.
 - **Place Name** (serif italic 400, 1.125rem): zone names on the specimen label.
 - **Body** (sans 400, 1rem, 1.5): purpose lines (max 65ch) and prose; 0.875rem in tables and secondary lines.
 - **Label** (sans 600, 0.8125rem, ink-2): field labels, table headers, slip headers. Sentence case; no uppercase or tracked labels anywhere.
@@ -216,6 +238,8 @@ Breakpoints are Tailwind defaults: 640px, 1024px, 1280px.
 ## Elevation & Depth
 
 The system is flat paper on board: sheets and tables are separated by 1px hairlines and the tonal step from ground to paper, with no shadow. Shadows exist only for objects that float over the map or over other paper, and they are soft, ink-tinted and offset downward like a sheet resting on a table.
+
+The folder label is the one object glued rather than floating: `box-shadow: 0 1px 0 rgb(0 0 0 / 0.25), 0 8px 18px -10px rgb(0 0 0 / 0.55)` on the linen.
 
 ### Shadow Vocabulary
 - **Sheet** (`box-shadow: 0 1px 2px rgb(27 36 48 / 0.06), 0 6px 18px -6px rgb(27 36 48 / 0.18)`): map controls, before/after year tags on the swipe map.
@@ -258,7 +282,9 @@ Firm and plain, like a rubber stamp: weight does the work, not decoration.
 - **Field label:** 0.8125rem 600 ink-2, sentence case, above the field.
 
 ### Navigation (step rail)
-- **Style:** folder green, folder-ink text. Each step is a 5px-radius row with a 28px circular mono number (check icon once done), 0.9375rem 600 label; locked steps show a lock icon and are not focusable targets.
+- **Style:** folder-green linen (two 3px repeating gradients over the green, darker toward the spine and the edge), folder-ink text. The app name sits on a paper label glued at the top, with "Cobertura terrestre · *Colombia*" under a hairline. Each step is a 5px-radius row with a 28px circular mono number (check icon once done), 0.9375rem 600 label; locked steps show a lock icon and are not focusable targets.
+- **Current step:** a board-coloured tab that runs to the rail's right edge with square right corners, so the step visibly opens onto the work area.
+- **Session slip:** at the foot of the rail, the place name in serif italic, the scene date and, with annual composites, how many scenes vote each year.
 - **Mobile:** collapses into a top bar and a horizontally scrolling row of the same step pills.
 
 ### Data table
@@ -266,10 +292,21 @@ Firm and plain, like a rubber stamp: weight does the work, not decoration.
 
 ### Charts
 - **Style:** Recharts line charts inside sheets, with figcaption title and muted unit line; horizontal grid only; class strokes 2px with paper-ringed dots; legends in ink-2.
+- **Trend chart (`TrendChart`):** hand-built SVG for the main class in hectares: 2.25px class stroke, paper-ringed dots, Theil-Sen dashed line and 95 % band (red only if significant, otherwise muted grey), excluded years as hollow dashed marks on the axis. The year in focus gets a dotted cursor, a 6px dot and its value typed on a paper tag; clicking a year moves the timeline to it.
+- **Axis:** the trend chart starts at zero by default. A two-segment switch offers "Acercar", which crops the axis, draws an axis-break mark at its foot and prints "Eje recortado (no parte de cero)…" in soil ochre under the chart. The exported PNG always starts at zero.
 - **Rules:** class-share charts run on a fixed 0 to 100 % axis, and the exported vegetation trend PNG starts its axis at zero. Years excluded from the trend are null and drawn as gaps (`connectNulls={false}`, NaN in matplotlib), never as zero. The NDVI panel uses an automatic domain because NDVI is a signed index.
 
 ### Specimen label (signature)
 A 300px floating label: serif italic place name, DMS coordinates in mono, a hairline-ruled definition list (area, date, satellite, tile, local cloud) with right-aligned figures, the class determination with 10px named swatches, and the vegetation-trend stamp, which is red on red wash only when the trend is significant and paper-2 with ink-2 otherwise. Above it, up to four dated determination slips stack newest on top, each a paper strip with "Det. YYYY", the scene date and V/A/S percentages in their class inks; older slips are counted beneath. The label collapses to its header on small maps.
+
+### Determination stamp (signature)
+The Mann-Kendall verdict as a rubber stamp: serif 700 at 1.1875rem over a 0.875rem line with the p-value and the period, 2px border plus a 1px outline at 2px offset (double rule), rotated -3°, sentence case. Ink is uneven through one shared SVG filter (`#ink-bleed`: turbulence displaces the edge by 1.3px and a low-frequency mask thins patches). Colour follows the Reserved Red Rule: signal red when significant, ink-2 otherwise; the words always say the same thing as the colour. A small version (0.8125rem) closes the specimen label beside the ha/yr figure. On arrival of the guided results it plays `stamp-press` once (0.62s after a 0.35s delay: from 1.7 scale at -11° down to 0.965, then rest).
+
+### Timeline (year slips)
+The timeline's control is a row of determination slips, one per year: paper strips with rounded tops, mono year (0.875rem 700) over the main class share (0.75rem). The visible year lifts 7px with the lift shadow and a violet border; hover lifts 2px; years outside the trend sit on paper-2 in muted ink and read "sin datos". Left and right arrows move between years; the row scrolls horizontally on phones. Beside it: the primary Reproducir/Pausar button, a 2× toggle and the GIF download. Over the map, a paper tag carries the year in mono 1.75rem 700, the main class in hectares and how the year was measured ("voto de 6 escenas"). Frames cross-fade in 0.38s with the previous year held underneath, so the base map never shows through.
+
+### Year matrix (progress)
+While a series runs, a sheet lists one row per year, newest first: mono year, one 14px square per scene, and the state at the right. Squares are outlined when pending, pulse violet-tint when next, fill violet when classified and turn vegetation ink when the year is done, at which point its main-class share is typed beside a green check. A year with no imagery reads "sin imágenes"; unplanned slots are dashed. The header counts scenes ("25 de 66").
 
 ### Swipe map and graticule
 Before/after rasters render pixelated; a 2px paper divider with a lift-shadowed 36×48px handle (keyboard-operable with arrow keys) and mono year tags on sheet shadow. The graticule is a real toggle: thin meridians and parallels with mono decimal-comma degree labels on 85% paper tags.
@@ -287,7 +324,9 @@ Exported before/after and trend PNGs sit on label paper with ink titles, muted s
 - **Do** pair every class or change colour with its Spanish label.
 - **Do** use veg-ink (4.87:1) for green text and keep veg, gain and newsoil for strokes and swatches.
 - **Do** reuse the exact class (veg, water, soil) and change (signal, gain, other, newsoil) values in both frontend and backend rasters.
-- **Do** start quantity axes at zero and draw excluded years as gaps.
+- **Do** start quantity axes at zero and draw excluded years as gaps; a cropped axis is allowed only as the explicit "Acercar" view of the trend chart, with its axis-break mark and its warning line.
+- **Do** keep textures as inline SVG noise in ink at very low opacity; the grain must disappear at arm's length.
+- **Do** write stamps in sentence case and let their colour repeat what their words say.
 - **Do** draw a non-significant trend in muted grey and say "Sin tendencia significativa".
 - **Do** keep stamp violet as the single action and focus colour.
 - **Do** load fonts from the @fontsource packages, never a CDN.
@@ -296,6 +335,8 @@ Exported before/after and trend PNGs sit on label paper with ink titles, muted s
 - **Don't** use type-specimen red for decoration, emphasis or a non-significant trend.
 - **Don't** add a dark theme, neon accents or glass panels; the world is light paper.
 - **Don't** shadow in-flow sheets; shadows belong to floating objects only.
+- **Don't** play the stamp press more than once per analysis, or stamp anything that is not a statistical verdict.
+- **Don't** add tape, torn edges, coffee rings or photographic paper; the material is fibre, grain, linen and ink, nothing else.
 - **Don't** set uppercase tracked labels or kickers above titles; labels are sentence case.
 - **Don't** connect a line across an excluded year or plot it as zero.
 - **Don't** round sheets, controls or labels beyond 6px; only progress tracks, gradient keys and step numbers are fully rounded.

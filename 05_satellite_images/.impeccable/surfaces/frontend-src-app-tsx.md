@@ -32,3 +32,15 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 - Zone presets: on desktop a vertical list in the right column beside the map (each preset needs its one-line description, which a horizontal row truncates); on mobile a horizontal scrollable row above the map, followed by the primary action, so a zone is chosen before the action names it.
 - Mobile first viewport: no bottom sheet. The rail collapses to one row (name + Guiado/Experto) plus a scrollable step row; step content stacks under the header and the map keeps 360px. Chosen so the map's drag and the swipe divider have no competing sheet gesture (a design rationale, not a tested comparison).
 - Primary actions sit at the end of the column they complete (zone column, rule sheet), not in the step header: the action follows the inputs it depends on.
+
+## Bolder pass (2026-11-16, "Herbario al máximo")
+
+User asked to improve the app "exponentially" in aesthetics and function, and chose to keep this world and push it (not a new world). Added, all in the system's own vocabulary:
+
+- Materials made visible: board fibre, paper grain, folder linen, a paper label on the rail, the current step as a tab opening onto the sheet.
+- The determination stamp (Mann-Kendall verdict) with uneven ink; it drops once when guided results arrive. This is the one choreographed moment.
+- The timeline: year slips as the playback control, a year/figure tag over the map, the trend chart sharing the year in focus, GIF export.
+- Guided running stage: the specimen label fills in while a year × scene matrix shows real progress; elapsed time shown.
+- Guided results open with the finding as a lede (up to 2.375rem) and the place in the title.
+- Map taller (up to 68dvh); in-map label is compact.
+- Unresolved item "forest vs pasture" above is closed (WorldCover scheme); yearly noise is now handled with annual composites (6 scenes per year, per-pixel vote).

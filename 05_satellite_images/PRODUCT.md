@@ -24,18 +24,20 @@ A guided, Colombia-focused change-detection workflow that runs end to end on rea
 ## Operating Context
 
 - Two ways of working, confirmed by the user: a **guided mode** for the journalist (pick a zone → see results and changes) and the current **expert mode** for the analyst (all six steps and parameters).
-- Expert workflow: zone and scene → band download → spectral indices → pseudo-labelling + Random Forest → classified map → temporal comparison / 10-year series → export.
+- Expert workflow: zone and scene → band download → spectral indices → pseudo-labelling + Random Forest → classified map → temporal comparison / timeline / 10-year series → heat → export.
 - Runs locally: FastAPI backend (port 8004) + React/Vite frontend (port 5177), launched from `run.sh` or the hub's Bento Launcher.
-- Processing times are real: scene search ~5 s, band download ~7 s, a 10-year series ~25–45 s.
+- Processing times are real: scene search ~5 s, band download ~7 s; a 10-year series takes ~25–45 s with one scene per year and 4–6 min with annual composites of 6 scenes (measured three times on San José del Guaviare, 177 km², 66 scenes: 242 s, 271 s and 353 s end to end, depending on the network). The guided mode runs the composite series, so a full guided analysis takes that long.
 
 ## Capabilities and Constraints
 
 - Data: Sentinel-2 L2A from Microsoft Planetary Computer; reliable coverage from 2017, irregular before.
 - Region: any AOI worldwide (decision 2026-10-09, reverting the Colombia-only scope); Colombia stays the focus through Colombian example zones, a reference outline on the map and place search that lists Colombian matches first. AOI up to 500 km².
 - Classes: rules scheme (Vegetación, Agua, Suelo expuesto / minería) or WorldCover scheme (Bosque, Agua, Suelo expuesto / minería, Urbano / construido, Pastos y cultivos), plus Sin datos / nube.
-- Outputs today: before/after map slider, comparison figure, area tables in hectares, change polygons (GeoJSON), area CSV, printable HTML report.
+- Outputs today: before/after map slider, year-by-year timeline with playback, comparison figure, area tables in hectares, change polygons (GeoJSON), area CSV, printable HTML report, publishable before/after and trend PNGs, animated GIF of the timeline.
 - Journalist needs (confirmed): publishable before/after images, trend charts, and figures with their uncertainty.
-- **Forest vs. pasture — resolved with WorldCover (2026-10-13).** Two training methods: course rules (3 classes) and ESA WorldCover 2021 labels (forest, water, bare soil/mining, urban, grass/crops). Guided mode uses WorldCover, so forest turned into pasture counts as forest loss. **Open:** with one scene per year the forest series is noisy (±~1,000 ha year to year in Guaviare), too noisy for slow losses that Impact Observatory detects (~-56 ha/yr); annual multi-scene composites are the next step.
+- **Forest vs. pasture — resolved with WorldCover (2026-10-13).** Two training methods: course rules (3 classes) and ESA WorldCover 2021 labels (forest, water, bare soil/mining, urban, grass/crops). Guided mode uses WorldCover, so forest turned into pasture counts as forest loss. With one scene per year the forest series is noisy (±~1,000 ha year to year in Guaviare), too noisy for slow losses that Impact Observatory detects (~-56 ha/yr).
+- **Annual composites (2026-11-16).** Each year can be measured with the 3, 6 or 10 clearest scenes of the whole year: every scene is classified separately and each pixel takes the class with the highest mean probability; the current year is composed the same way and becomes the map behind every figure, layer and export. Guided mode uses 6. The October prototype on Guaviare cut the year-to-year swing from ~1,100 ha (single scene) to ~590 ha. Trade-offs to state when asked: the series takes minutes instead of seconds; the composite and the single clearest scene can disagree on the current share (Guaviare 2025: forest 51.3 % by composite vs 56.0 % in the clearest scene); and a long drought or flood still moves a year.
+- **Timeline (2026-11-16).** Year-by-year playback over the same frame and contrast, driven by one slip per year, with the main-class figure of each year and an animated GIF for publication. The yearly image is a mosaic of that year's clearest dates, so pasture colour varies with the season between years; figures come from the vote, not from the picture.
 - **Heat (2026-10-13).** Land surface temperature from Landsat 8/9 (Sentinel-2 has no thermal band): per-class temperature and warming of lost vs. kept forest (difference-in-differences, detrended, block-bootstrap CI). Surface temperature at ~10:30 a.m., not air temperature; thermal detail is ~100 m; from 2013.
 - Validation is against pseudo-labels, not field data; any figure must be presented as an estimate.
 

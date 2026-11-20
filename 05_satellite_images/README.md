@@ -1,6 +1,6 @@
 # 05 — Imágenes Satelitales — Clasificación de Cobertura Terrestre
 
-Aplicación web que lleva el flujo del notebook `actividad.ipynb` a una interfaz interactiva. Consulta imágenes **Sentinel-2 L2A** del catálogo STAC de Microsoft Planetary Computer, descarga 9 bandas espectrales y la máscara de nubes (SCL), calcula 7 índices, entrena un clasificador **Random Forest** con pseudo-etiquetado y genera un mapa de cobertura terrestre (Vegetación / Agua / Minería / Sin datos). Permite comparar la zona con cualquier año de la última década, calcular la serie temporal completa con tendencias y exportar un reporte.
+Aplicación web que lleva el flujo del notebook `actividad.ipynb` a una interfaz interactiva. Consulta imágenes **Sentinel-2 L2A** del catálogo STAC de Microsoft Planetary Computer, descarga 9 bandas espectrales y la máscara de nubes (SCL), calcula 7 índices, entrena un clasificador **Random Forest** con pseudo-etiquetado y genera un mapa de cobertura terrestre (Vegetación / Agua / Minería / Sin datos). Permite comparar la zona con cualquier año de la última década, medir cada año con un **compuesto anual** (voto de varias escenas), recorrerla en una **línea de tiempo** animada, calcular la serie temporal completa con tendencias y exportar un reporte.
 
 ---
 
@@ -18,10 +18,10 @@ Aplicación web que lleva el flujo del notebook `actividad.ipynb` a una interfaz
 │   │   ├── bands.py      # Descarga paralela alineada a B04 + True Color Preview
 │   │   ├── indices.py    # NDVI, BSI, NDWI, MNDWI, NDBI, EVI, SAVI
 │   │   ├── classifier.py # Pseudo-etiquetado, Random Forest y métricas hold-out
-│   │   ├── compare.py    # Comparativa por año, serie temporal, capas para el mapa
+│   │   ├── compare.py    # Comparativa por año, compuestos anuales por voto, serie temporal, capas para el mapa
 │   │   ├── thermal.py    # Temperatura de superficie (Landsat 8/9), calor vs. deforestación
 │   │   ├── export.py     # PNG clasificado + GeoTIFF
-│   │   └── report.py     # Reporte HTML, CSV de superficies, GeoJSON de cambios
+│   │   └── report.py     # Reporte HTML, CSV de superficies, GeoJSON de cambios, PNG y GIF para publicar
 │   └── routers/          # search, bands, indices, classifier, export, compare, region, heat
 ├── frontend/             # React + TypeScript + Vite + Tailwind + Leaflet + Recharts — puerto 5177
 │   └── src/
@@ -35,11 +35,14 @@ Aplicación web que lleva el flujo del notebook `actividad.ipynb` a una interfaz
 │       │   ├── MapPanel.tsx         # Paso 5: mapa interactivo y exportación
 │       │   ├── ComparePanel.tsx     # Paso 6: comparativa de un año (slider antes/después)
 │       │   ├── TimeSeriesPanel.tsx  #   serie de 10 años con tendencias
+│       │   ├── TrendChart.tsx       #   hectáreas por año con Theil-Sen e IC 95 % (SVG propio)
+│       │   ├── YearMatrix.tsx       #   avance real: una casilla por escena clasificada
+│       │   ├── Stamp.tsx            #   sello de determinación (veredicto de Mann-Kendall)
 │       │   ├── HeatPanel.tsx        # Paso 7: temperatura de superficie
 │       │   ├── heat/                #   mapa, leyenda, hallazgos y bloque del modo guiado
-│       │   └── map/                 # AoiMap, SwipeMap, LayerControls, capas base
+│       │   └── map/                 # AoiMap, SwipeMap, TimelineMap, LayerControls, capas base
 │       ├── hooks/                   # useProgressStream (NDJSON), useLayerBounds
-│       └── lib/                     # zonas de ejemplo, colores de gráficos
+│       └── lib/                     # zonas de ejemplo, colores de gráficos, avance por año
 ├── satellite_analyzer.ipynb  # Notebook de referencia (no modificar)
 └── run.sh                    # Script de arranque unificado
 ```
@@ -73,14 +76,14 @@ npm install && npm run dev
 
 ## 🧭 Dos modos
 
-- **Guiado** (para periodistas y no especialistas): mismo contenido que el modo experto, con los parámetros elegidos automáticamente. Eliges una zona y un solo botón ejecuta todo (escena más despejada del último año → bandas → modelo con WorldCover → mapa → serie de 10 años → temperatura con Landsat). Los resultados se organizan en pestañas: **Resumen** (frase con la tendencia del bosque, su IC y significancia, antes/después, gráfico, descargas y límites), **Mapa** (clasificación, NDVI, color real y exportaciones), **Comparar años** (año a año con transiciones y la serie completa de todas las clases), **Calor** y **Cómo se hizo** (parámetros automáticos, imagen e índices, métricas del modelo).
+- **Guiado** (para periodistas y no especialistas): mismo contenido que el modo experto, con los parámetros elegidos automáticamente. Eliges una zona y un solo botón ejecuta todo (escena más despejada del último año → bandas → modelo con WorldCover → mapa → serie de 10 años con compuestos de 6 escenas por año → temperatura con Landsat; entre 4 y 6 minutos). Mientras corre, una matriz muestra una casilla por escena clasificada y la cifra de cada año al terminar. Los resultados se organizan en pestañas: **Resumen** (frase con la tendencia del bosque y el sello de su significancia, antes/después o **año por año**, gráfico, descargas y límites), **Mapa** (clasificación, NDVI, color real y exportaciones), **Comparar años** (año a año con transiciones y la serie completa de todas las clases), **Calor** y **Cómo se hizo** (parámetros automáticos, imagen e índices, métricas del modelo).
 - **Experto**: los 7 pasos con todos los parámetros. La sesión es la misma: «Ver el análisis completo» abre en modo experto lo calculado en modo guiado.
 
 El selector está arriba del riel lateral y se recuerda en el navegador.
 
 ## 🎨 Diseño
 
-Mundo visual «pliego de herbario» (tradición del Herbario Nacional Colombiano): cartón de montaje gris verdoso, papel de etiqueta, tinta ferrogálica, riel verde carpeta, violeta de sello de accesión para las acciones y un rojo reservado solo para el cambio estadísticamente significativo. Cada zona analizada lleva su **etiqueta de ejemplar** (localidad, coordenadas, fecha, satélite, nubes, cobertura por clase) y cada año comparado le agrega una **ficha de determinación** fechada. Tipografías autoalojadas: Atkinson Hyperlegible Next (interfaz), Source Serif 4 (títulos y localidades) y Courier Prime (cifras). Paletas de clases y de cambios validadas para daltonismo. Contexto de producto en `PRODUCT.md`.
+Mundo visual «pliego de herbario» (tradición del Herbario Nacional Colombiano): cartón de montaje gris verdoso con su fibra, papel de etiqueta, tinta ferrogálica, carpeta de lino verde con su rótulo pegado, violeta de sello de accesión para las acciones y un rojo reservado solo para el cambio estadísticamente significativo. El veredicto de la tendencia es un **sello de determinación** que cae una sola vez al llegar a los resultados, y la línea de tiempo se maneja con las **fichas de determinación** de cada año. Cada zona analizada lleva su **etiqueta de ejemplar** (localidad, coordenadas, fecha, satélite, nubes, cobertura por clase) y cada año comparado le agrega una **ficha de determinación** fechada. Tipografías autoalojadas: Atkinson Hyperlegible Next (interfaz), Source Serif 4 (títulos y localidades) y Courier Prime (cifras). Paletas de clases y de cambios validadas para daltonismo. Contexto de producto en `PRODUCT.md`.
 
 ## 🗺️ Flujo de la Aplicación (7 pasos)
 
@@ -124,6 +127,8 @@ Capa de clasificación, NDVI o color real superpuesta al mapa satelital con opac
 
 ### Paso 6 — Comparativa Temporal
 - **Un año** (`POST /compare`): escena de la misma temporada (±60 días; si no hay, todo el año) con menos nubes en la zona, alineada píxel a píxel y clasificada con el **mismo** modelo. Slider **antes/después** sobre el mapa (color real, clasificación, NDVI o mapa de cambios), figura comparativa, superficies y transiciones (p. ej. vegetación → minería) y **GeoJSON** de polígonos de cambio (`GET /export/changes.geojson`, manchas < 0.5 ha filtradas).
+- **Compuestos anuales** (`scenes_per_year` = 1, 3, 6 o 10 en `POST /compare` y `POST /timeseries`; la interfaz usa 6): en lugar de una sola escena por año, se clasifican por separado las N escenas más despejadas de **todo el año** (una por fecha) y cada píxel toma la clase con mayor probabilidad media (`predict_proba`). Un píxel deja de sumar observaciones cuando tiene al menos 3 y su probabilidad media supera 0,8. El año actual se compone igual (`session.current_composite`), y ese mapa es el que usan cifras, capas, exportaciones y calor (`SessionData.active_map()`). No se promedia la reflectancia: un mosaico de medianas saca al modelo del dominio en que se entrenó. Cambiar `scenes_per_year` descarta los años medidos con el método anterior. Con `1` se conserva el método original (una escena de la misma temporada).
+- **Línea de tiempo** (pestaña del paso 6 y «Año por año» en el resumen guiado): un cuadro por año sobre el mismo encuadre y contraste (`GET /layer?...&year=AAAA`, también para el año actual), con reproducción, fichas por año y la cifra de la clase principal; el gráfico de tendencia resalta el año visible. `GET /export/timelapse.gif?kind=rgb|class&title=…&frame_ms=…` genera la animación con año, cifra y crédito.
 - **Serie de 10 años** (`POST /timeseries`): procesa los años en paralelo y estima la tendencia de cada clase sobre el % del área sin nubes (solo años con ≥ 50 % de la zona despejada) con la **pendiente de Theil-Sen** (mediana de pendientes entre pares de años, robusta frente a años atípicos, con IC 95 %) y la **prueba de Mann-Kendall** (p-valor; significativa si p < 0.05). Sentinel-2 L2A tiene cobertura irregular antes de 2017.
 
 ### Paso 7 — Calor (temperatura de la superficie)
@@ -135,6 +140,7 @@ Sentinel-2 no tiene banda térmica, así que el calor se mide con **Landsat 8/9 
 
 ### Salidas para publicar
 - `GET /export/beforeafter.png?year=…&kind=rgb|class&title=…` — antes/después con fechas, barra de escala y crédito «Contiene datos modificados de Copernicus Sentinel-2».
+- `GET /export/timelapse.gif?kind=rgb|class&title=…` — animación año por año con la cifra de cada año y el crédito.
 - `GET /export/trend.png?title=…` — hectáreas de vegetación por año con la recta de Theil-Sen, el veredicto de Mann-Kendall y el IC 95 %; eje desde cero para no exagerar cambios pequeños.
 - Los años con menos del 50 % de píxeles clasificados no entran en la tendencia y aparecen como huecos (nunca como 0).
 
@@ -147,10 +153,10 @@ El modelo no necesita datos de entrenamiento externos. Usa **pseudo-etiquetado**
 Cada búsqueda crea una sesión con TTL de 60 minutos que almacena las bandas descargadas, los índices calculados, el clasificador entrenado y el mapa resultante. Esto evita re-descargas entre pasos.
 
 ### Streaming NDJSON
-Las operaciones largas (descarga, entrenamiento, predicción, comparativa, serie temporal) transmiten su progreso como `application/x-ndjson` con líneas `{stage, progress, message}`. Las tareas en segundo plano emiten un latido cada ~8 s para que el cliente no corte la conexión por silencio (30 s).
+Las operaciones largas (descarga, entrenamiento, predicción, comparativa, serie temporal) transmiten su progreso como `application/x-ndjson` con líneas `{stage, progress, message}`. La comparativa y la serie añaden `event` (plan de años, escena *i* de *n*, año listo con su % de la clase principal, año sin imágenes), que alimenta la matriz de avance. Las tareas en segundo plano emiten un latido cada ~8 s para que el cliente no corte la conexión por silencio (30 s).
 
 ### Comparabilidad entre años
-Para que un cambio en el mapa sea un cambio real en el terreno: misma temporada fenológica, misma grilla (reproyección directa), misma escala radiométrica (reflectancia con el offset propio de cada escena), mismo modelo y nubes excluidas. Las superficies se expresan también como % del área despejada para que la nubosidad de cada año no sesgue la tendencia.
+Para que un cambio en el mapa sea un cambio real en el terreno: mismo método en todos los años (compuesto de todo el año, o misma temporada fenológica con una escena), misma grilla (reproyección directa), misma escala radiométrica (reflectancia con el offset propio de cada escena), mismo modelo y nubes excluidas. Las superficies se expresan también como % del área despejada para que la nubosidad de cada año no sesgue la tendencia.
 
 ## 🛠️ Stack
 
