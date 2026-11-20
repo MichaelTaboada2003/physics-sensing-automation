@@ -58,7 +58,7 @@ def render_classified_map(session: "SessionData") -> bytes:
         )
 
     n = len(scheme(session.class_scheme))
-    index_map = _class_map_to_index(session.class_map, n)
+    index_map = _class_map_to_index(session.active_map(), n)
 
     fig, ax = plt.subplots(figsize=(8, 6), dpi=100)
     ax.imshow(index_map, cmap=ListedColormap(class_palette(session.class_scheme)), vmin=0, vmax=n,
@@ -102,7 +102,7 @@ def export_geotiff(session: "SessionData") -> bytes:
             "Ejecute la predicción antes de exportar el GeoTIFF."
         )
 
-    class_map = session.class_map.astype(np.int16)
+    class_map = session.active_map().astype(np.int16)
     height, width = class_map.shape
 
     with MemoryFile() as mem_file:

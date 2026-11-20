@@ -485,6 +485,7 @@ def train_stream(
     # Los derivados de otro modelo (o esquema) nunca son comparables.
     session.class_map = None
     session.comparisons.clear()
+    session.current_composite = None
 
     # ------------------------------------------------------------------
     # 10. Línea final (Req 6.3, 10.4)
@@ -672,6 +673,7 @@ def predict_stream(session_id: str) -> Generator[str, None, None]:
         return
     session.class_map = class_map
     session.comparisons.clear()
+    session.current_composite = None
 
     # ------------------------------------------------------------------
     # 8. Línea final (Req 10.4)

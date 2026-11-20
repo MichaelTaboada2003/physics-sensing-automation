@@ -15,7 +15,10 @@ import numpy as np
 
 from core import thermal
 from core.classes import primary
-from core.compare import YearError, _check_session, _drain, _ndjson, pixel_area_m2, process_year, scene_year
+from core.compare import (
+    YearError, _check_session, _drain, _ndjson, current_entry, ensure_current, pixel_area_m2, process_year,
+    reporter, scene_year,
+)
 from session_store import SessionData
 
 MIN_COMMON_PERCENT = 50.0
@@ -28,7 +31,8 @@ def requested_years(session: SessionData, years_back: int) -> list[int]:
 
 def _cover(session: SessionData, year: int):
     if year == scene_year(session):
-        return session.class_map, {"id": session.scene_id, "datetime": session.scene_datetime}
+        cur = current_entry(session)
+        return cur["class_map"], {"id": cur["scene"]["id"], "datetime": cur["scene"]["datetime"]}
     entry = session.comparisons.get(year)
     # Comparaciones sin revisión conocida no se mezclan con un modelo nuevo.
     if not entry or "classifier_id" not in entry or entry["classifier_id"] != session.classifier_id:
@@ -100,6 +104,7 @@ def build_heat_series(session: SessionData, years_back: int = 10, failures: dict
         "coverage_label": "Cobertura arbórea" if session.class_scheme == "worldcover" else "Vegetación",
         "primary_key": primary(session.class_scheme).key, "primary_learned": bool(primary_learned),
         "classifier_id": session.classifier_id, "method": "single_scene_unadjusted_common_support",
+        "cover_scenes_per_year": session.scenes_per_year,
     }
 
 
@@ -119,17 +124,20 @@ def heat_series_stream(session_id: str, years_back: int):
     def unchanged():
         return session.classifier is model and session.class_map is current_map
 
+    report = reporter(q)
+
     def work():
         try:
+            ensure_current(session, report)
             for year in years:
                 if not unchanged():
                     raise YearError("El modelo o el mapa cambió. Vuelva a calcular la serie.")
                 try:
                     cls, _ = _cover(session, year)
                     if cls is None:
-                        process_year(session, year, q.put)
+                        process_year(session, year, report)
                     if year not in session.heat:
-                        thermal.process_heat_year(session, year, q.put)
+                        thermal.process_heat_year(session, year, report)
                 except (YearError, thermal.ThermalError) as exc:
                     failures[year] = str(exc)
                     q.put(f"{year}: {exc}")

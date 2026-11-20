@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Optional
+import threading
 import uuid
 
 import numpy as np
@@ -28,7 +29,27 @@ class SessionData:
     class_map: Optional[np.ndarray] = None
     comparisons: dict = field(default_factory=dict)  # {year: {"scene": {...}, "bands": {...}, "class_map": ...}}
     heat: dict = field(default_factory=dict)         # {year: {"scene": {...}, "lst": °C, ...}} (core/thermal.py)
+    # Compuestos anuales (core/compare.py): escenas por año que votan cada píxel.
+    # 1 = una sola escena de la misma temporada (método original).
+    scenes_per_year: int = 1
+    # Compuesto del año actual, con la forma de una entrada de ``comparisons``.
+    current_composite: Optional[dict] = None
+    lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
     created_at: datetime = field(default_factory=datetime.utcnow)
+
+    def active_map(self) -> Optional[np.ndarray]:
+        """Mapa del año actual que usan cifras, capas y exportaciones.
+
+        Con compuestos anuales es el voto de varias escenas; si no, ``class_map``
+        (la escena elegida). ``class_map`` nunca se sobrescribe: los flujos lo usan
+        para detectar que el modelo o el mapa cambió a mitad de un cálculo.
+        """
+        comp = self.current_composite
+        if (comp is not None and self.scenes_per_year > 1
+                and comp.get("classifier_id") == self.classifier_id
+                and comp.get("scenes_per_year") == self.scenes_per_year):
+            return comp["class_map"]
+        return self.class_map
 
     def is_expired(self) -> bool:
         """Returns True if the session has exceeded the 60-minute TTL."""

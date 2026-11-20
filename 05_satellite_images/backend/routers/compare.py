@@ -35,6 +35,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from core.compare import (
+    COMPOSITE_CHOICES,
     LAYER_KINDS,
     MAX_YEARS_BACK,
     build_series,
@@ -42,6 +43,8 @@ from core.compare import (
     compare_stream,
     render_comparison,
     render_layer,
+    scene_year,
+    set_scenes_per_year,
     timeseries_stream,
 )
 from core.sentinel import grid_bounds_latlon
@@ -55,6 +58,8 @@ class CompareRequest(BaseModel):
 
     session_id: str
     year: int
+    # Escenas por año (1, 3, 6 o 10). Vacío = el método vigente en la sesión.
+    scenes_per_year: Optional[int] = None
 
 
 class TimeseriesRequest(BaseModel):
@@ -62,6 +67,14 @@ class TimeseriesRequest(BaseModel):
 
     session_id: str
     years_back: int = MAX_YEARS_BACK
+    scenes_per_year: Optional[int] = None
+
+
+def _apply_method(session, scenes_per_year: Optional[int]) -> None:
+    """Fija el método de la sesión; cambiarlo descarta los años medidos con el anterior."""
+    if scenes_per_year is not None and scenes_per_year not in COMPOSITE_CHOICES:
+        raise HTTPException(status_code=400, detail=f"scenes_per_year debe ser uno de {list(COMPOSITE_CHOICES)}.")
+    set_scenes_per_year(session, scenes_per_year)
 
 
 def _require_class_map(session) -> None:
@@ -108,6 +121,7 @@ def compare(request: CompareRequest) -> StreamingResponse:
             status_code=400,
             detail=f"El año debe estar entre {min_year} y {current_year - 1}.",
         )
+    _apply_method(session, request.scenes_per_year)
 
     return StreamingResponse(
         compare_stream(request.session_id, request.year),
@@ -145,6 +159,7 @@ def timeseries(request: TimeseriesRequest) -> StreamingResponse:
     _require_class_map(session)
     if not (1 <= request.years_back <= MAX_YEARS_BACK):
         raise HTTPException(status_code=400, detail=f"years_back debe estar entre 1 y {MAX_YEARS_BACK}.")
+    _apply_method(session, request.scenes_per_year)
     return StreamingResponse(
         timeseries_stream(request.session_id, request.years_back),
         media_type="application/x-ndjson",
@@ -171,7 +186,8 @@ def timeseries_summary(
 def layer(
     session_id: str = Query(..., description="Identificador de la sesión activa."),
     kind: str = Query(..., description=f"Una de {LAYER_KINDS}."),
-    year: Optional[int] = Query(None, description="Año comparado; vacío = escena actual."),
+    year: Optional[int] = Query(None, description="Año comparado; vacío = escena actual; "
+                                "el año de la escena = el año actual como entra en la serie."),
 ) -> Response:
     session = _get_session_or_404(session_id)
     if kind not in LAYER_KINDS:
@@ -180,7 +196,7 @@ def layer(
         raise HTTPException(status_code=409, detail="La sesión aún no tiene mapa clasificado.")
     if not session.bands:
         raise HTTPException(status_code=409, detail="Descargue las bandas primero.")
-    if year is not None:
+    if year is not None and year != scene_year(session):
         _get_comparison_or_409(session, session_id, year)
     try:
         png = render_layer(session, kind, year)

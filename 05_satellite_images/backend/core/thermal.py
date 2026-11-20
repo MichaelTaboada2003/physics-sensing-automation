@@ -364,7 +364,7 @@ def heat_summary(session: SessionData, year: int | None = None) -> dict:
         "scene": cur["scene"],
         "clear_percent": cur["clear_percent"],
         "overall": _describe(cur["lst"]),
-        "by_class": by_class(cur["lst"], session.class_map, session.class_scheme, area),
+        "by_class": by_class(cur["lst"], session.active_map(), session.class_scheme, area),
         "range": [vmin, vmax],
         "primary": {"key": primary(session.class_scheme).key, "label": primary(session.class_scheme).label},
         "years": sorted(session.heat),
@@ -386,7 +386,7 @@ def heat_summary(session: SessionData, year: int | None = None) -> dict:
             out["delta_range"] = delta_range(session, year)
             out["deforestation"] = {
                 "year": year,
-                **deforestation_heat(cur["lst"], past["lst"], comp["class_map"], session.class_map,
+                **deforestation_heat(cur["lst"], past["lst"], comp["class_map"], session.active_map(),
                                      block_px, area),
             }
     return out
@@ -411,7 +411,7 @@ def delta_anomaly(session: SessionData, year: int) -> np.ndarray:
     d = session.heat[scene_year(session)]["lst"] - session.heat[year]["lst"]
     comp = session.comparisons.get(year)
     if comp is not None and session.class_map is not None:
-        ref = (comp["class_map"] == 0) & (session.class_map == 0)
+        ref = (comp["class_map"] == 0) & (session.active_map() == 0)
     else:
         ref = np.isfinite(d)
     return d - trend_surface(d, ref)
@@ -468,7 +468,7 @@ def heat_stream(session_id: str, year: int | None = None):
     import queue
     import threading
 
-    from core.compare import YearError, _check_session, _drain, _ndjson, process_year
+    from core.compare import YearError, _check_session, _drain, _ndjson, ensure_current, process_year
 
     session, err = _check_session(session_id)
     if err:
@@ -482,12 +482,14 @@ def heat_stream(session_id: str, year: int | None = None):
     result: dict = {}
     steps = [0]
 
-    def report(msg: str):
+    def report(msg: str, **event):
         steps[0] += 1
-        q.put(msg)
+        q.put((msg, event) if event else msg)
 
     def _worker():
         try:
+            # Con compuestos anuales, la cobertura actual es el compuesto del año
+            ensure_current(session, report)
             if cur_year not in session.heat:
                 process_heat_year(session, cur_year, report)
             if year is not None:
