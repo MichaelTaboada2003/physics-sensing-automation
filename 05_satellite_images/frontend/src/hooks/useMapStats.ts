@@ -7,6 +7,10 @@ export interface MapStats {
   cloud_fraction: number | null;
   pixel_area_m2: number | null;
   classes: Record<ClassKey, ClassStat> | null;
+  /** Escenas que componen el mapa vigente (1 = la escena elegida). */
+  n_scenes?: number;
+  scene_dates?: string[];
+  scenes_per_year?: number;
   scheme?: ClassMethod;
   class_defs?: ClassDef[];
 }

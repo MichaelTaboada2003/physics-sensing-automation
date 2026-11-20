@@ -15,7 +15,26 @@ export interface StreamLine {
   heat_series?: HeatTimeSeries;
   method?: ClassMethod;
   classes?: ClassDef[];
+  /** Avance estructurado de la serie: plan, escena i de n, año listo o fallido. */
+  event?: YearEvent;
 }
+
+/** Evento de progreso por año (core/compare.py · reporter). */
+export interface YearEvent {
+  plan?: { years: number[]; cached: number[]; scenes_per_year: number; current_year: number };
+  year?: number;
+  scenes_total?: number;
+  scene_index?: number;
+  scene_date?: string;
+  year_done?: boolean;
+  year_failed?: boolean;
+  n_scenes?: number;
+  /** % del área clasificada que ocupa la clase principal al terminar el año. */
+  primary_percent?: number | null;
+}
+
+/** Escenas por año: 1 = una escena de la misma temporada; más = compuesto anual por voto. */
+export type ScenesPerYear = 1 | 3 | 6 | 10;
 
 export interface SearchRequest {
   bbox: [number, number, number, number]; // [lon_min, lat_min, lon_max, lat_max]
@@ -114,6 +133,9 @@ export interface ComparisonSummary {
   year: number;
   past_scene: SceneMeta;
   current_scene: SceneMeta;
+  past_n_scenes?: number;
+  current_n_scenes?: number;
+  scenes_per_year?: number;
   pixel_area_m2: number;
   past: Record<ClassKey, ClassStat>;
   current: Record<ClassKey, ClassStat>;
@@ -154,6 +176,11 @@ export interface Trend {
 export interface SeriesPoint {
   year: number;
   scene: SceneMeta;
+  /** Escenas que votaron el año (1 con el método de escena única). */
+  n_scenes?: number;
+  scene_dates?: string[];
+  /** Probabilidad media de la clase ganadora en el voto (solo compuestos). */
+  confidence?: number | null;
   stats: Record<ClassKey, ClassStat>;
   ndvi_mean: number | null;
   clear_percent: number;
@@ -170,6 +197,7 @@ export interface TimeSeries {
   years_used_for_trend: number[];
   min_valid_percent: number;
   failed: { year: number; error: string }[];
+  scenes_per_year?: number;
 }
 
 export type LayerKind = 'rgb' | 'class' | 'ndvi' | 'change';

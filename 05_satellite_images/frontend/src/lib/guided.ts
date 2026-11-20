@@ -1,4 +1,9 @@
-import type { BBox, TimeSeries } from '../types';
+import type { BBox, ScenesPerYear, TimeSeries } from '../types';
+import { emptyYearProgress } from './yearProgress';
+import type { YearProgress } from './yearProgress';
+
+/** El modo guiado mide cada año con un compuesto de hasta 6 escenas (voto por píxel). */
+export const GUIDED_SCENES_PER_YEAR: ScenesPerYear = 6;
 
 export type GuidedStage = 'zone' | 'running' | 'results';
 
@@ -15,10 +20,15 @@ export interface GuidedRun {
   series: TimeSeries | null;
   /** Sesión a la que pertenece la serie (si la sesión cambia, la serie no vale). */
   seriesSession: string | null;
+  /** Avance por año y escena de la serie en curso. */
+  years: YearProgress;
+  /** Momento en que empezó el análisis (ms), para el cronómetro. */
+  startedAt: number | null;
 }
 
 export const initialGuidedRun = (bbox: BBox, zoneName: string): GuidedRun => ({
   bbox, zoneName, current: null, done: [], message: '', error: null, series: null, seriesSession: null,
+  years: emptyYearProgress(GUIDED_SCENES_PER_YEAR), startedAt: null,
 });
 
 /** Año base de la comparación guiada: el primero bien clasificado desde 2017
