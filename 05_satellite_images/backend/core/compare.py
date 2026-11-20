@@ -55,6 +55,7 @@ from core.classes import primary, scheme, scheme_json
 from core.export import _class_map_to_index, class_palette
 from core.indices import compute_all_indices, compute_indices
 from core.search import best_scene, list_scenes
+from core.worldcover import WORLDCOVER_YEAR
 from core.sentinel import (
     BAND_SET,
     RGB_BANDS,
@@ -82,6 +83,7 @@ VOTE_MIN_OBS = 3                    # observaciones mínimas antes de dar un pí
 VOTE_CONFIDENT = 0.8                # probabilidad media a partir de la cual deja de sumar
 VOTE_STOP_SHARE = 0.995             # con esta fracción resuelta no se leen más escenas
 _MAX_LOCAL_CLOUD = 80.0             # una escena casi cubierta no aporta al voto
+TRAINING_EXTRA_DATES = 2            # fechas además de la escena con que se entrena (WorldCover)
 _MOSAIC_MARGIN_PX = 5               # la imagen del año evita los bordes de nube que la SCL no marca
 _RGB_GAMMA = 1.9                    # realce de tonos medios del color real
 
@@ -210,7 +212,7 @@ def _scene_meta(scene: dict) -> dict:
 
 def _read_scene(session: SessionData, item, year: int) -> tuple[dict, np.ndarray]:
     """Bandas en reflectancia y máscara de nubes de *item* sobre la grilla de la sesión."""
-    ref_shape = session.class_map.shape
+    ref_shape = session.bands["B04"].shape
     assets = [*BAND_SET, SCL_ASSET]
 
     def _read(asset: str) -> np.ndarray:
@@ -350,6 +352,32 @@ def composite_scenes(session: SessionData, year: int, n: int, exclude_date: str 
     scenes = list(by_date.values())
     usable = [s for s in scenes if s["local_cloud"] is None or s["local_cloud"] <= _MAX_LOCAL_CLOUD]
     return (usable or scenes)[:n]
+
+
+def training_scenes(session: SessionData, n: int = TRAINING_EXTRA_DATES) -> list[tuple[int, dict]]:
+    """Escenas de otras fechas para entrenar junto a la de la sesión: ``[(año, escena)]``.
+
+    Una del mismo año (otra estación, otra turbidez del agua) y otra del año de
+    WorldCover, cuando las etiquetas coinciden mejor con lo que se ve. Un modelo
+    entrenado con una sola fecha confunde el agua de otras fechas con pastos.
+    """
+    year, day = scene_year(session), session.scene_datetime[:10]
+    plan = [(year, 1), (WORLDCOVER_YEAR, n - 1)] if year != WORLDCOVER_YEAR else [(year, n)]
+    picks: list[tuple[int, dict]] = []
+    for y, k in plan:
+        if k <= 0:
+            continue
+        try:
+            picks += [(y, sc) for sc in composite_scenes(session, y, k, exclude_date=day)]
+        except YearError:
+            continue
+    return picks[:n]
+
+
+def read_training_scene(session: SessionData, year: int, scene: dict) -> tuple[dict, dict]:
+    """Bandas e índices (nubes en NaN) de una escena de entrenamiento sobre la grilla de la sesión."""
+    bands, mask = _read_scene(session, scene["item"], year)
+    return bands, compute_all_indices(bands, mask)
 
 
 class _Vote:

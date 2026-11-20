@@ -379,13 +379,85 @@ def test_train_worldcover_uses_scheme_with_urban_and_forest():
     for k, cols in ((0, slice(0, 6)), (3, slice(6, 12)), (4, slice(12, 18)), (1, slice(18, 24))):
         session.bands["B08"][:, cols] = 0.1 + 0.08 * k
     session.indices = {}
-    with patch.object(classifier, "worldcover_labels", return_value=wc):
+    with patch.object(classifier, "worldcover_labels", return_value=wc), \
+            patch.object(compare, "training_scenes", return_value=[]):
         lines = [json.loads(l) for l in train_stream(sid, None, "worldcover")]
     done = lines[-1]
     assert done["stage"] == "done", done
     assert done["method"] == "worldcover" and session.class_scheme == "worldcover"
     assert set(done["metrics"]["classes"]) == {"Bosque", "Agua", "Urbano / construido", "Pastos y cultivos"}
     assert [c["key"] for c in done["classes"]] == ["forest", "water", "mining", "urban", "grass"]
+
+
+def _water_and_forest_bands(shape, water_cols: slice) -> dict:
+    """Bosque denso en toda la zona salvo un río (agua abierta) en *water_cols*."""
+    bands = {b: np.full(shape, 0.05, dtype=np.float32) for b in sentinel.BAND_SET}
+    bands["B08"][:] = 0.40                  # NIR alto: NDVI ≈ 0.78
+    bands["B11"][:] = 0.20
+    bands["B03"][:, water_cols] = 0.12      # agua turbia: verde alto, NIR y SWIR bajos
+    bands["B04"][:, water_cols] = 0.15
+    bands["B08"][:, water_cols] = 0.08
+    bands["B11"][:, water_cols] = 0.02
+    return bands
+
+
+def test_clean_labels_drops_labels_that_contradict_the_scene():
+    from core.worldcover import clean_labels
+    shape = (4, 8)
+    idx = compute_all_indices(_water_and_forest_bands(shape, slice(4, 8)))
+    wc = np.zeros(shape, dtype=np.int16)    # todo «bosque» en WorldCover…
+    wc[:, 6:] = 1                           # …salvo parte del río; el río migró a 4-5
+    wc[0, 0] = 1                            # «agua» sobre bosque: cauce abandonado
+    wc[1, 1] = -1                           # sin etiqueta: se queda así
+    idx["mndwi"][2, 6] = np.nan             # nube: no hay evidencia para descartar
+    out, n = clean_labels(wc, idx)
+    assert (out[:, 4:6] == -1).all()        # río etiquetado como bosque → descartado
+    assert (out[:, 6:] == 1).sum() == 8     # agua bien etiquetada se conserva (también bajo la nube)
+    assert out[0, 0] == -1 and out[1, 1] == -1 and out[2, 6] == 1
+    assert n == 8 + 1
+
+
+def test_worldcover_training_pools_cleaned_labels_from_extra_dates():
+    from core import classifier
+    sid, session = _make_session()
+    session.class_map = None
+    session.bands = _water_and_forest_bands(SHAPE, slice(16, 24))
+    session.indices = {}
+    wc = np.zeros(SHAPE, dtype=np.int16)
+    wc[:, 20:] = 1                          # WorldCover solo ve la mitad del río
+    other = _water_and_forest_bands(SHAPE, slice(16, 24))
+    other["B03"][:, 16:] = 0.09             # otra fecha: agua menos turbia
+    extra = [(2021, {"datetime": "2021-06-17T15:00:00+00:00", "item": None})]
+    with patch.object(classifier, "worldcover_labels", return_value=wc), \
+            patch.object(compare, "training_scenes", return_value=extra), \
+            patch.object(compare, "read_training_scene", return_value=(other, compute_all_indices(other))):
+        lines = [json.loads(l) for l in train_stream(sid, None, "worldcover")]
+    done = lines[-1]
+    assert done["stage"] == "done", done
+    assert done["metrics"]["training_dates"] == ["2026-07-15", "2021-06-17"]
+    assert done["metrics"]["labels_cleaned"] == 2 * 4 * SHAPE[0]  # el río etiquetado como bosque, en cada fecha
+    assert any("Escena del 2021-06-17 añadida" in l["message"] for l in lines)
+    # el río que WorldCover llamaba bosque no se aprende como bosque
+    X, _ = classifier.build_features(session.bands, compute_all_indices(session.bands))
+    pred = session.classifier.predict(X).reshape(SHAPE)
+    assert (pred[:, 16:20] == 1).all()
+
+
+def test_worldcover_training_continues_when_an_extra_date_fails():
+    from core import classifier
+    sid, session = _make_session()
+    session.bands = _water_and_forest_bands(SHAPE, slice(16, 24))
+    session.indices = {}
+    wc = np.zeros(SHAPE, dtype=np.int16)
+    wc[:, 16:] = 1
+    extra = [(2021, {"datetime": "2021-06-17T15:00:00+00:00", "item": None})]
+    with patch.object(classifier, "worldcover_labels", return_value=wc), \
+            patch.object(compare, "training_scenes", return_value=extra), \
+            patch.object(compare, "read_training_scene", side_effect=compare.YearError("timeout")):
+        lines = [json.loads(l) for l in train_stream(sid, None, "worldcover")]
+    assert lines[-1]["stage"] == "done", lines[-1]
+    assert lines[-1]["metrics"]["training_dates"] == ["2026-07-15"]
+    assert any("No se pudo leer la escena del 2021-06-17" in l["message"] for l in lines)
 
 
 def test_worldcover_scheme_flows_through_stats_series_and_change_map():

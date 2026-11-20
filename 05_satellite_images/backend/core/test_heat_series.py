@@ -136,7 +136,8 @@ def test_model_changed_mid_series_returns_error_not_mixed_results():
 def test_retraining_invalidates_maps_and_old_comparisons():
     sid, s = _prepared()
     wc = np.where(np.indices(s.class_map.shape)[1] < 12, 0, 3).astype(np.int16)
-    with patch("core.classifier.worldcover_labels", return_value=wc):
+    with patch("core.classifier.worldcover_labels", return_value=wc), \
+            patch("core.compare.training_scenes", return_value=[]):
         lines = [json.loads(x) for x in train_stream(sid, method="worldcover")]
     assert lines[-1]["stage"] == "done", lines[-1]
     assert s.class_map is None and s.comparisons == {}

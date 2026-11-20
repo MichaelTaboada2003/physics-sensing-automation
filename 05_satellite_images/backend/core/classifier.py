@@ -24,7 +24,7 @@ from sklearn.model_selection import train_test_split
 
 from core.classes import label_of, scheme, scheme_json
 from core.indices import INDEX_NAMES, SENTINEL_VALUE, compute_indices
-from core.worldcover import WorldCoverError, worldcover_labels
+from core.worldcover import WorldCoverError, clean_labels, worldcover_labels
 from core.sentinel import BAND_SET
 from session_store import get_session
 
@@ -352,6 +352,8 @@ def train_stream(
     # 3. Etiquetas: reglas de umbral o WorldCover
     # ------------------------------------------------------------------
     n_ambiguous = 0
+    n_cleaned = 0
+    training_dates = [session.scene_datetime[:10]]
     if method == "worldcover":
         yield _ndjson({"stage": "preparing", "progress": 0.05, "message": "Leyendo ESA WorldCover 2021 sobre la zona…"})
         try:
@@ -359,7 +361,8 @@ def train_stream(
         except WorldCoverError as exc:
             yield _ndjson({"stage": "error", "progress": 0.05, "message": str(exc), "error": str(exc)})
             return
-        labels = wc[valid]
+        cleaned, n_cleaned = clean_labels(wc, session.indices)
+        labels = cleaned[valid]
     else:
         rules = rules or ThresholdRules()
         # Etiquetas: 0=Veg, 1=Agua, 2=Minería; -1=sin etiqueta o ambigua (se descarta)
@@ -368,12 +371,40 @@ def train_stream(
         )
         n_ambiguous = int(np.count_nonzero(ambiguous))
 
-    classes = scheme(method)
     labeled_mask = labels >= 0
-    X_train = X_flat[labeled_mask]
-    y_train = labels[labeled_mask]
-    counts = {c.key: int(np.count_nonzero(y_train == c.code)) for c in classes}
-    total_labeled = len(y_train)
+    # Un conjunto (X, y) por fecha; con WorldCover se suman escenas de otras fechas
+    datasets: list[tuple[np.ndarray, np.ndarray]] = [(X_flat[labeled_mask], labels[labeled_mask])]
+    if method == "worldcover":
+        from core.compare import read_training_scene, training_scenes  # evita import circular
+
+        yield _ndjson({"stage": "preparing", "progress": 0.07,
+                       "message": "Buscando escenas de otras fechas para que el modelo no dependa de un solo día…"})
+        try:
+            extra = training_scenes(session)
+        except Exception:  # noqa: BLE001 — sin catálogo se entrena con la escena sola
+            extra = []
+        for i, (year, scene) in enumerate(extra):
+            day = scene["datetime"][:10]
+            try:
+                bands_d, idx_d = read_training_scene(session, year, scene)
+            except Exception as exc:  # noqa: BLE001
+                yield _ndjson({"stage": "preparing", "progress": 0.07 + 0.02 * (i + 1),
+                               "message": f"No se pudo leer la escena del {day}; se sigue sin ella ({exc})."})
+                continue
+            X_d, valid_d = build_features(bands_d, idx_d)
+            y_d, n_d = clean_labels(wc, idx_d)
+            y_d = y_d[valid_d]
+            n_cleaned += n_d
+            datasets.append((X_d[y_d >= 0], y_d[y_d >= 0]))
+            training_dates.append(day)
+            yield _ndjson({"stage": "preparing", "progress": 0.07 + 0.02 * (i + 1),
+                           "message": f"Escena del {day} añadida al entrenamiento."})
+
+    classes = scheme(method)
+    y_all = np.concatenate([y for _, y in datasets])
+    counts = {c.key: int(np.count_nonzero(y_all == c.code)) for c in classes}
+    total_labeled = len(y_all)
+    n_dates = len(datasets)
 
     # ------------------------------------------------------------------
     # 4. Línea inicial con conteo por clase
@@ -383,12 +414,16 @@ def train_stream(
         "progress": 0.1,
         "message": (
             "Píxeles etiquetados — " + ", ".join(f"{c.label}: {counts[c.key]}" for c in classes)
-            + f". Total: {total_labeled}."
+            + f". Total: {total_labeled}"
+            + (f" en {n_dates} fechas" if n_dates > 1 else "") + "."
             + (f" Descartados por ambiguos: {n_ambiguous}." if method == "rules" else "")
+            + (f" Descartadas por contradecir la imagen: {n_cleaned}." if n_cleaned else "")
         ),
         **counts,
         "total_labeled": total_labeled,
         "ambiguous": n_ambiguous,
+        "labels_cleaned": n_cleaned,
+        "training_dates": training_dates,
     })
 
     # ------------------------------------------------------------------
@@ -413,17 +448,23 @@ def train_stream(
             msg += " Amplíe los umbrales o pruebe el método WorldCover."
         yield _ndjson({"stage": "error", "progress": 0.15, "message": msg, "error": msg})
         return
-    keep_mask = np.isin(y_train, kept_codes)
-    X_train, y_train = X_train[keep_mask], y_train[keep_mask]
 
     # ------------------------------------------------------------------
-    # 6. Submuestreo proporcional + partición hold-out estratificada
+    # 6. Submuestreo proporcional (el mismo peso por fecha) + partición hold-out estratificada
     # ------------------------------------------------------------------
     rng = np.random.default_rng(42)
-    keep = _proportional_subsample(y_train, MAX_TRAIN_SAMPLES, MIN_SAMPLES_PER_CLASS, rng)
-    X_bal, y_bal = X_train[keep], y_train[keep]
+    parts_X, parts_y = [], []
+    for X_d, y_d in datasets:
+        m = np.isin(y_d, kept_codes)
+        X_d, y_d = X_d[m], y_d[m]
+        keep = _proportional_subsample(
+            y_d, MAX_TRAIN_SAMPLES // n_dates, max(1, MIN_SAMPLES_PER_CLASS // n_dates), rng,
+        )
+        parts_X.append(X_d[keep])
+        parts_y.append(y_d[keep])
+    X_bal, y_bal = np.concatenate(parts_X), np.concatenate(parts_y)
 
-    can_split = min(int(np.count_nonzero(y_train == k)) for k in kept_codes) >= 4
+    can_split = min(int(np.count_nonzero(y_bal == k)) for k in kept_codes) >= 4
     if can_split:
         X_fit, X_test, y_fit, y_test = train_test_split(
             X_bal, y_bal, test_size=TEST_FRACTION, stratify=y_bal, random_state=42
@@ -473,6 +514,8 @@ def train_stream(
         "message": f"Entrenamiento completado. OOB accuracy: {oob_score:.4f}. Evaluando…",
     })
     metrics = _evaluate(clf, X_test, y_test, len(y_fit), method)
+    metrics["training_dates"] = training_dates
+    metrics["labels_cleaned"] = n_cleaned
 
     # ------------------------------------------------------------------
     # 9. Almacenar clasificador en la sesión (Req 6.2)
