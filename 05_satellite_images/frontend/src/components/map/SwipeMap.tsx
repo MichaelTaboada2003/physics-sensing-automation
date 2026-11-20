@@ -60,7 +60,7 @@ function PaneClipper({ ratio, enabled }: { ratio: number; enabled: boolean }) {
   return null;
 }
 
-function FitBounds({ bounds }: { bounds: LatLngBoundsExpression }) {
+export function FitBounds({ bounds }: { bounds: LatLngBoundsExpression }) {
   const map = useMap();
   const key = JSON.stringify(bounds);
   useEffect(() => {
